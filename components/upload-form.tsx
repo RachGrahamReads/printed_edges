@@ -33,6 +33,17 @@ interface ProcessResponse {
   };
 }
 
+interface PdfAnalysis {
+  status: string;
+  pageCount: number;
+  dimensions: {
+    widthInches: number;
+    heightInches: number;
+    widthPoints: number;
+    heightPoints: number;
+  };
+}
+
 export default function UploadForm() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -40,12 +51,78 @@ export default function UploadForm() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
   const [processResult, setProcessResult] = useState<ProcessResponse | null>(null);
+  const [pdfAnalysis, setPdfAnalysis] = useState<PdfAnalysis | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Processing options
-  const [numPages, setNumPages] = useState(30);
+  // Processing options (numPages will be set from PDF analysis)
   const [pageType, setPageType] = useState("white");
   const [position, setPosition] = useState("right");
+  
+  // Get values from PDF analysis or defaults
+  const trimWidth = pdfAnalysis?.dimensions.widthInches || 5;
+  const trimHeight = pdfAnalysis?.dimensions.heightInches || 8;
+  const numPages = pdfAnalysis?.pageCount || 30;
+  
+  // Constants for calculations
+  const BLEED_INCHES = 0.125;
+  const POINTS_PER_INCH = 72;
+  const PAGE_THICKNESS = {
+    "white": 0.0025,
+    "cream": 0.0027,
+    "color": 0.003,
+    "bw": 0.0025
+  };
+  
+  // Calculate required image dimensions
+  const calculateImageDimensions = () => {
+    const pageThickness = PAGE_THICKNESS[pageType as keyof typeof PAGE_THICKNESS];
+    const totalThickness = pageThickness * numPages;
+    const requiredWidth = totalThickness; // Image width = total thickness
+    const requiredHeight = trimHeight + (BLEED_INCHES * 2); // Height + full bleed
+    
+    return {
+      width: requiredWidth,
+      height: requiredHeight,
+      widthPixels: Math.round(requiredWidth * 300), // Assume 300 DPI
+      heightPixels: Math.round(requiredHeight * 300)
+    };
+  };
+  
+  const imageDimensions = calculateImageDimensions();
+  
+  // Analyze PDF when file is selected
+  const handlePdfSelect = async (file: File | null) => {
+    setPdfFile(file);
+    setPdfAnalysis(null);
+    
+    if (!file) return;
+    
+    setIsAnalyzing(true);
+    setError(null);
+    
+    try {
+      const formData = new FormData();
+      formData.append('pdf', file);
+      
+      const response = await fetch('/api/analyze-pdf', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to analyze PDF');
+      }
+      
+      setPdfAnalysis(data.analysis);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze PDF');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const handleProcess = async (imagePath: string, pdfPath: string) => {
     setIsProcessing(true);
@@ -65,8 +142,8 @@ export default function UploadForm() {
           pageType,
           position,
           mode: "single",
-          trimWidth: 5,
-          trimHeight: 8,
+          trimWidth,
+          trimHeight,
         }),
       });
 
@@ -138,67 +215,107 @@ export default function UploadForm() {
   };
 
   return (
-    <Card className="w-full max-w-md mx-auto">
+    <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
         <CardTitle>File Upload</CardTitle>
         <CardDescription>
-          Upload an image and a PDF file to Supabase storage
+          Upload your PDF, specify dimensions, and we'll calculate the required image size
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="image">Image File</Label>
-            <Input
-              id="image"
-              type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
-              onChange={(e) => setImageFile(e.target.files?.[0] || null)}
-              disabled={isUploading}
-            />
-            {imageFile && (
-              <p className="text-sm text-gray-600">
-                Selected: {imageFile.name} ({formatFileSize(imageFile.size)})
-              </p>
-            )}
+          {/* Step 1: PDF Upload */}
+          <div className="space-y-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h4 className="font-medium text-sm text-blue-900">Step 1: Upload Your PDF</h4>
+            <div className="space-y-2">
+              <Label htmlFor="pdf">PDF File (e.g. 5×8 inch)</Label>
+              <Input
+                id="pdf"
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => handlePdfSelect(e.target.files?.[0] || null)}
+                disabled={isUploading}
+              />
+              {pdfFile && (
+                <div className="space-y-2">
+                  <p className="text-sm text-blue-600">
+                    Selected: {pdfFile.name} ({formatFileSize(pdfFile.size)})
+                  </p>
+                  {isAnalyzing && (
+                    <p className="text-sm text-blue-500 flex items-center gap-2">
+                      <span className="animate-spin">⏳</span> Analyzing PDF...
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="pdf">PDF File</Label>
-            <Input
-              id="pdf"
-              type="file"
-              accept="application/pdf"
-              onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
-              disabled={isUploading}
-            />
-            {pdfFile && (
-              <p className="text-sm text-gray-600">
-                Selected: {pdfFile.name} ({formatFileSize(pdfFile.size)})
-              </p>
-            )}
-          </div>
+          {/* Step 2: Detected PDF Information */}
+          {pdfAnalysis && (
+            <div className="space-y-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+              <h4 className="font-medium text-sm text-purple-900">Step 2: Detected PDF Information</h4>
+              <div className="bg-white p-3 rounded border">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p><strong>Page Count:</strong> {pdfAnalysis.pageCount} pages</p>
+                    <p><strong>Trim Size:</strong> {pdfAnalysis.dimensions.widthInches}" × {pdfAnalysis.dimensions.heightInches}"</p>
+                  </div>
+                  <div>
+                    <p><strong>Width:</strong> {pdfAnalysis.dimensions.widthInches}" ({pdfAnalysis.dimensions.widthPoints}pts)</p>
+                    <p><strong>Height:</strong> {pdfAnalysis.dimensions.heightInches}" ({pdfAnalysis.dimensions.heightPoints}pts)</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
-          {/* Processing Options */}
-          <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-            <h4 className="font-medium text-sm text-gray-900">Processing Options</h4>
+          {/* Step 3: Image Requirements */}
+          {pdfAnalysis && (
+            <div className="space-y-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <h4 className="font-medium text-sm text-amber-900">Step 3: Required Image Dimensions</h4>
+            <div className="bg-white p-3 rounded border">
+              <div className="text-sm space-y-1">
+                <p><strong>Required Image Size:</strong></p>
+                <p>Width: {imageDimensions.width.toFixed(3)}" ({imageDimensions.widthPixels}px at 300 DPI)</p>
+                <p>Height: {imageDimensions.height.toFixed(3)}" ({imageDimensions.heightPixels}px at 300 DPI)</p>
+                <p className="text-xs text-gray-600 mt-2">
+                  Width = {numPages} pages × {PAGE_THICKNESS[pageType as keyof typeof PAGE_THICKNESS]}" thickness<br/>
+                  Height = {trimHeight}" + {BLEED_INCHES * 2}" full bleed
+                </p>
+              </div>
+            </div>
             
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="numPages">Number of Pages</Label>
-                <Input
-                  id="numPages"
-                  type="number"
-                  value={numPages}
-                  onChange={(e) => setNumPages(parseInt(e.target.value) || 30)}
-                  min="1"
-                  max="1000"
-                  disabled={isUploading || isProcessing}
-                />
+            <div className="space-y-2">
+              <Label htmlFor="image">Upload Your Edge Image</Label>
+              <Input
+                id="image"
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                disabled={isUploading}
+              />
+              {imageFile && (
+                <p className="text-sm text-amber-600">
+                  Selected: {imageFile.name} ({formatFileSize(imageFile.size)})
+                </p>
+              )}
+            </div>
+            </div>
+          )}
+
+          {/* Step 4: Processing Options */}
+          {pdfAnalysis && (
+            <div className="space-y-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <h4 className="font-medium text-sm text-gray-900">Step 4: Processing Options</h4>
+            
+            <div className="space-y-4">
+              <div className="bg-white p-3 rounded border">
+                <p className="text-sm"><strong>Detected Pages:</strong> {numPages} pages</p>
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="pageType">Page Type</Label>
+                <Label htmlFor="pageType">Paper Type</Label>
                 <select
                   id="pageType"
                   value={pageType}
@@ -206,10 +323,10 @@ export default function UploadForm() {
                   disabled={isUploading || isProcessing}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                 >
-                  <option value="white">White</option>
-                  <option value="cream">Cream</option>
-                  <option value="color">Color</option>
-                  <option value="bw">Black & White</option>
+                  <option value="white">White Paper (0.0025" thickness)</option>
+                  <option value="cream">Cream Paper (0.0027" thickness)</option>
+                  <option value="color">Color Paper (0.003" thickness)</option>
+                  <option value="bw">B&W Paper (0.0025" thickness)</option>
                 </select>
               </div>
             </div>
@@ -227,14 +344,15 @@ export default function UploadForm() {
                 <option value="left">Left</option>
               </select>
             </div>
-          </div>
+            </div>
+          )}
 
           <Button 
             type="submit" 
-            disabled={!imageFile || !pdfFile || isUploading || isProcessing}
+            disabled={!imageFile || !pdfFile || !pdfAnalysis || isUploading || isProcessing || isAnalyzing}
             className="w-full"
           >
-            {isUploading ? "Uploading..." : isProcessing ? "Processing..." : "Upload & Process Files"}
+            {isAnalyzing ? "Analyzing PDF..." : isUploading ? "Uploading..." : isProcessing ? "Processing..." : "Upload & Process Files"}
           </Button>
 
           {error && (

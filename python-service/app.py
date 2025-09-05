@@ -52,78 +52,83 @@ def process_pdf(pdf_url, edge_url, trim_width, trim_height, num_pages=30, page_t
     try:
         # Open PDF from URL
         pdf_doc = open_file_from_url(pdf_url, is_image=False)
-        page_width = pdf_doc[0].rect.width
-        page_height = pdf_doc[0].rect.height
+        original_width = pdf_doc[0].rect.width
+        original_height = pdf_doc[0].rect.height
 
         # Open edge image from URL
         edge_img = open_file_from_url(edge_url, is_image=True)
         edge_width, edge_height = edge_img.size
 
+        # Calculate bleed dimensions
+        bleed_points = BLEED_INCHES * POINTS_PER_INCH  # 0.125" = 9 points
+        new_width = original_width + (2 * bleed_points)  # Add bleed to both sides
+        new_height = original_height + (2 * bleed_points)  # Add bleed to top/bottom
+
         # Get page thickness for slice width
         page_thickness_points = PAGE_THICKNESS.get(page_type.lower(), 0.0025 * POINTS_PER_INCH)
         slice_width_points = page_thickness_points * num_pages
 
-        # Define bleed (extra margin to extend slice into)
-        bleed_points = 10
-        bleed_extra_points = 5
-        bleed_total = bleed_points + bleed_extra_points
-
         previous_slice = None
 
-        for page_num in range(len(pdf_doc)):
-            page = pdf_doc[page_num]
+        # Create new PDF with expanded pages
+        new_pdf = fitz.open()
 
-            if page_num % 2 == 0:  # Odd page
-                slice_width_px = max(1, int(edge_width * (slice_width_points / page_width)))
+        for page_num in range(len(pdf_doc)):
+            original_page = pdf_doc[page_num]
+            
+            # Create new page with bleed dimensions
+            new_page = new_pdf.new_page(width=new_width, height=new_height)
+            
+            # Copy original content to center of new page (with bleed margins)
+            original_rect = fitz.Rect(0, 0, original_width, original_height)
+            centered_rect = fitz.Rect(
+                bleed_points,  # x0: left margin
+                bleed_points,  # y0: top margin
+                bleed_points + original_width,  # x1: left margin + original width
+                bleed_points + original_height  # y1: top margin + original height
+            )
+            
+            # Copy the original page content to the centered position
+            new_page.show_pdf_page(centered_rect, pdf_doc, page_num)
+
+            # Now add the edge image
+            if page_num % 2 == 0:  # Odd page (right edge)
+                slice_width_px = max(1, int(edge_width * (slice_width_points / original_width)))
                 x0 = (page_num // 2) * slice_width_px
                 x1 = x0 + slice_width_px
                 page_slice = edge_img.crop((x0, 0, x1, edge_height))
-                page_slice = page_slice.resize((slice_width_px, int(page_height)), Image.Resampling.LANCZOS)
+                page_slice = page_slice.resize((slice_width_px, int(new_height)), Image.Resampling.LANCZOS)
                 previous_slice = page_slice
-                current_position = "right"
-            else:  # Even page
+                
+                # Position on right edge (extends into bleed)
+                edge_x = new_width - slice_width_px
+                edge_rect = fitz.Rect(edge_x, 0, new_width, new_height)
+                
+            else:  # Even page (left edge)
                 if previous_slice is None:
                     raise ValueError("Even page without previous slice!")
                 page_slice = ImageOps.mirror(previous_slice)
-                current_position = "left"
+                
+                # Position on left edge (starts from left bleed)
+                edge_rect = fitz.Rect(0, 0, page_slice.width, new_height)
 
-            # Extend into bleed
-            bleed_pixels = int(bleed_total)
-            if current_position == "right":
-                extension = page_slice.crop((page_slice.width - 1, 0, page_slice.width, int(page_height)))
-            else:
-                extension = page_slice.crop((0, 0, 1, int(page_height)))
-            extension = extension.resize((bleed_pixels, int(page_height)), Image.Resampling.NEAREST)
-
-            # Combine slice + extension
-            if current_position == "right":
-                final_slice = Image.new("RGBA", (page_slice.width + bleed_pixels, int(page_height)))
-                final_slice.paste(page_slice, (0, 0))
-                final_slice.paste(extension, (page_slice.width, 0))
-                x_offset = page.rect.width - final_slice.width
-            else:
-                final_slice = Image.new("RGBA", (page_slice.width + bleed_pixels, int(page_height)))
-                final_slice.paste(extension, (0, 0))
-                final_slice.paste(page_slice, (bleed_pixels, 0))
-                x_offset = 0
-
-            # Convert to bytes
+            # Convert edge image to bytes and insert
             img_bytes = BytesIO()
-            final_slice.save(img_bytes, format="PNG")
+            page_slice.save(img_bytes, format="PNG")
             img_bytes.seek(0)
-
-            # Insert into PDF
-            page.insert_image(
-                fitz.Rect(x_offset, 0, x_offset + final_slice.width, page.rect.height),
+            
+            new_page.insert_image(
+                edge_rect,
                 stream=img_bytes.read(),
                 keep_proportion=False
             )
 
-        # Create temporary file for output
+        # Save the new PDF
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
             output_path = tmp_file.name
 
-        pdf_doc.save(output_path)
+        new_pdf.save(output_path)
+        new_pdf.close()
         pdf_doc.close()
 
         return {"status": "success", "output_path": output_path}
@@ -161,6 +166,47 @@ def process_route():
             mimetype="application/pdf"
         )
 
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/analyze-pdf", methods=["POST"])
+def analyze_pdf():
+    try:
+        if 'pdf' not in request.files:
+            return jsonify({"status": "error", "message": "No PDF file provided"}), 400
+        
+        pdf_file = request.files['pdf']
+        if pdf_file.filename == '':
+            return jsonify({"status": "error", "message": "No file selected"}), 400
+        
+        # Read the PDF file
+        pdf_content = pdf_file.read()
+        pdf_doc = fitz.open(stream=pdf_content, filetype="pdf")
+        
+        # Get page count
+        page_count = len(pdf_doc)
+        
+        # Get dimensions from first page (assuming all pages are the same size)
+        first_page = pdf_doc[0]
+        page_rect = first_page.rect
+        
+        # Convert from points to inches (72 points = 1 inch)
+        width_inches = page_rect.width / POINTS_PER_INCH
+        height_inches = page_rect.height / POINTS_PER_INCH
+        
+        pdf_doc.close()
+        
+        return jsonify({
+            "status": "success",
+            "pageCount": page_count,
+            "dimensions": {
+                "widthInches": round(width_inches, 3),
+                "heightInches": round(height_inches, 3),
+                "widthPoints": page_rect.width,
+                "heightPoints": page_rect.height
+            }
+        })
+        
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
