@@ -98,6 +98,36 @@ If you wish to just develop locally and not deploy to Vercel, [follow the steps 
 
 Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
 
+## Printed Edges PDF Processing
+
+This application has been extended with PDF edge processing capabilities:
+
+### Additional Features
+- **PDF Processing**: Superimpose edge images onto PDFs with Python service
+- **File Upload**: Enhanced upload with image and PDF support
+- **Processing Options**: Configure page count, paper type, and edge position
+- **Download Results**: Get processed PDFs with download links
+
+### Setup Python Service
+
+1. Navigate to python-service directory:
+```bash
+cd python-service
+```
+
+2. Run setup script:
+```bash
+./start.sh
+```
+
+3. Add to your `.env.local`:
+```env
+PYTHON_SERVICE_URL=http://localhost:5001
+```
+
+### Usage
+Visit `/test-upload` to use the PDF processing feature.
+
 ## More Supabase examples
 
 - [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)

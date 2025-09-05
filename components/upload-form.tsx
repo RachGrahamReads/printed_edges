@@ -24,12 +24,70 @@ interface UploadResponse {
   };
 }
 
+interface ProcessResponse {
+  status: string;
+  message: string;
+  processedPdf: {
+    path: string;
+    url: string;
+  };
+}
+
 export default function UploadForm() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
+  const [processResult, setProcessResult] = useState<ProcessResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Processing options
+  const [numPages, setNumPages] = useState(30);
+  const [pageType, setPageType] = useState("white");
+  const [position, setPosition] = useState("right");
+
+  const handleProcess = async (imagePath: string, pdfPath: string) => {
+    setIsProcessing(true);
+    setError(null);
+    setProcessResult(null);
+
+    try {
+      const response = await fetch("/api/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          imagePath,
+          pdfPath,
+          numPages,
+          pageType,
+          position,
+          mode: "single",
+          trimWidth: 5,
+          trimHeight: 8,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Processing failed");
+      }
+
+      setProcessResult(data);
+      
+      // Reset form after successful processing
+      setImageFile(null);
+      setPdfFile(null);
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Processing failed");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,12 +118,9 @@ export default function UploadForm() {
       }
 
       setUploadResult(data);
-      setImageFile(null);
-      setPdfFile(null);
       
-      // Reset form inputs
-      const form = e.target as HTMLFormElement;
-      form.reset();
+      // Auto-process the files after successful upload
+      await handleProcess(data.files.image.path, data.files.pdf.path);
       
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -124,12 +179,62 @@ export default function UploadForm() {
             )}
           </div>
 
+          {/* Processing Options */}
+          <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+            <h4 className="font-medium text-sm text-gray-900">Processing Options</h4>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="numPages">Number of Pages</Label>
+                <Input
+                  id="numPages"
+                  type="number"
+                  value={numPages}
+                  onChange={(e) => setNumPages(parseInt(e.target.value) || 30)}
+                  min="1"
+                  max="1000"
+                  disabled={isUploading || isProcessing}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="pageType">Page Type</Label>
+                <select
+                  id="pageType"
+                  value={pageType}
+                  onChange={(e) => setPageType(e.target.value)}
+                  disabled={isUploading || isProcessing}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                >
+                  <option value="white">White</option>
+                  <option value="cream">Cream</option>
+                  <option value="color">Color</option>
+                  <option value="bw">Black & White</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="position">Edge Position</Label>
+              <select
+                id="position"
+                value={position}
+                onChange={(e) => setPosition(e.target.value)}
+                disabled={isUploading || isProcessing}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              >
+                <option value="right">Right</option>
+                <option value="left">Left</option>
+              </select>
+            </div>
+          </div>
+
           <Button 
             type="submit" 
-            disabled={!imageFile || !pdfFile || isUploading}
+            disabled={!imageFile || !pdfFile || isUploading || isProcessing}
             className="w-full"
           >
-            {isUploading ? "Uploading..." : "Upload Files"}
+            {isUploading ? "Uploading..." : isProcessing ? "Processing..." : "Upload & Process Files"}
           </Button>
 
           {error && (
@@ -138,28 +243,47 @@ export default function UploadForm() {
             </div>
           )}
 
-          {uploadResult && (
+          {processResult && (
             <div className="p-4 bg-green-50 border border-green-200 rounded-md">
-              <h3 className="font-medium text-green-800 mb-2">Upload Successful!</h3>
+              <h3 className="font-medium text-green-800 mb-2">Processing Complete! 🎉</h3>
               <div className="text-sm text-green-700 space-y-2">
+                <p>{processResult.message}</p>
+                <div className="flex gap-2 mt-3">
+                  <a 
+                    href={processResult.processedPdf.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors"
+                  >
+                    📥 Download Processed PDF
+                  </a>
+                  <button
+                    onClick={() => {
+                      setProcessResult(null);
+                      setUploadResult(null);
+                      // Reset form
+                      const form = document.querySelector('form') as HTMLFormElement;
+                      form?.reset();
+                    }}
+                    className="inline-flex items-center px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200 transition-colors"
+                  >
+                    🔄 Process Another File
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {uploadResult && !processResult && !isProcessing && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+              <h3 className="font-medium text-blue-800 mb-2">Upload Successful!</h3>
+              <div className="text-sm text-blue-700 space-y-2">
                 <div>
                   <strong>Image:</strong> {uploadResult.files.image.path}
                   <br />
                   <span className="text-xs">
                     {formatFileSize(uploadResult.files.image.size)} • {uploadResult.files.image.type}
                   </span>
-                  {uploadResult.files.image.url && (
-                    <div>
-                      <a 
-                        href={uploadResult.files.image.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline text-xs"
-                      >
-                        View Image
-                      </a>
-                    </div>
-                  )}
                 </div>
                 <div>
                   <strong>PDF:</strong> {uploadResult.files.pdf.path}
@@ -167,18 +291,6 @@ export default function UploadForm() {
                   <span className="text-xs">
                     {formatFileSize(uploadResult.files.pdf.size)} • {uploadResult.files.pdf.type}
                   </span>
-                  {uploadResult.files.pdf.url && (
-                    <div>
-                      <a 
-                        href={uploadResult.files.pdf.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline text-xs"
-                      >
-                        View PDF
-                      </a>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

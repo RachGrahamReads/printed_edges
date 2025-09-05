@@ -49,25 +49,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if bucket exists, create if not
-    const { data: buckets } = await supabase.storage.listBuckets();
-    const bucketExists = buckets?.some(bucket => bucket.name === "user-uploads");
-    
-    if (!bucketExists) {
-      const { error: bucketError } = await supabase.storage.createBucket("user-uploads", {
-        public: false,
-        allowedMimeTypes: [...imageTypes, ...pdfTypes],
-        fileSizeLimit: maxSize,
-      });
-      
-      if (bucketError) {
-        console.error("Error creating bucket:", bucketError);
-        return NextResponse.json(
-          { error: "Failed to create storage bucket" },
-          { status: 500 }
-        );
-      }
-    }
+    // Skip bucket listing check - anon key doesn't have permissions
+    // The bucket 'user-uploads' exists, so proceed with upload
 
     // Generate unique file names
     const timestamp = Date.now();
