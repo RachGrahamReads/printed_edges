@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
         // This is our test response - Python service is working but not processing PDFs yet
         return NextResponse.json({
           success: false,
-          error: 'PDF processing temporarily disabled',
+          error: 'PDF processing temporarily disabled on Render free tier',
           message: jsonResponse.message || 'Python service is in test mode'
         });
       }
