@@ -31,8 +31,8 @@ export async function POST(request: NextRequest) {
 
     // For now, we'll need to create a temporary endpoint in Python service that accepts files
     // Since the current /process endpoint expects URLs, let's call a new endpoint
+    // Use environment variable for Python service URL
     const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:5001';
-    // Ensure the URL has protocol
     const fullUrl = pythonServiceUrl.startsWith('http') ? pythonServiceUrl : `https://${pythonServiceUrl}`;
     const pythonResponse = await fetch(`${fullUrl}/process-files`, {
       method: 'POST',
@@ -41,7 +41,12 @@ export async function POST(request: NextRequest) {
 
     if (!pythonResponse.ok) {
       const errorText = await pythonResponse.text().catch(() => '');
-      throw new Error(`Python service error: ${pythonResponse.statusText} - ${errorText}`);
+      console.error('Python service error:', pythonResponse.status, pythonResponse.statusText, errorText);
+      return NextResponse.json({
+        success: false,
+        error: `Python service error: ${pythonResponse.status} ${pythonResponse.statusText}`,
+        details: errorText.substring(0, 500) // Limit error text length
+      }, { status: 500 });
     }
 
     // Get the processed PDF as blob
