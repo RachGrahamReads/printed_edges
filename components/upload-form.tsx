@@ -53,33 +53,35 @@ export default function UploadForm() {
   const [processResult, setProcessResult] = useState<ProcessResponse | null>(null);
   const [pdfAnalysis, setPdfAnalysis] = useState<PdfAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [imageAnalysis, setImageAnalysis] = useState<{width: number, height: number, dpi?: number} | null>(null);
+  const [imageSizeMatch, setImageSizeMatch] = useState<'perfect' | 'too-small' | 'too-large' | 'unknown'>('unknown');
   const [error, setError] = useState<string | null>(null);
   
   // Processing options (numPages will be set from PDF analysis)
-  const [pageType, setPageType] = useState("white");
+  const [pageType, setPageType] = useState("bw");
   const [position, setPosition] = useState("right");
   
   // Get values from PDF analysis or defaults
   const trimWidth = pdfAnalysis?.dimensions.widthInches || 5;
   const trimHeight = pdfAnalysis?.dimensions.heightInches || 8;
   const numPages = pdfAnalysis?.pageCount || 30;
+  const numLeaves = Math.ceil(numPages / 2); // Each leaf = 2 pages (front/back)
   
   // Constants for calculations
   const BLEED_INCHES = 0.125;
   const POINTS_PER_INCH = 72;
   const PAGE_THICKNESS = {
-    "white": 0.0025,
-    "cream": 0.0027,
-    "color": 0.003,
-    "bw": 0.0025
+    "bw": 0.0032,
+    "standard": 0.0032,
+    "premium": 0.0037
   };
   
   // Calculate required image dimensions
   const calculateImageDimensions = () => {
     const pageThickness = PAGE_THICKNESS[pageType as keyof typeof PAGE_THICKNESS];
-    const totalThickness = pageThickness * numPages;
-    const requiredWidth = totalThickness; // Image width = total thickness
-    const requiredHeight = trimHeight + (BLEED_INCHES * 2); // Height + full bleed
+    const totalThickness = pageThickness * numLeaves; // Use leaves, not pages!
+    const requiredWidth = totalThickness; // Image width = total thickness of leaves
+    const requiredHeight = trimHeight + (BLEED_INCHES * 2); // Height + top/bottom bleed
     
     return {
       width: requiredWidth,
@@ -87,6 +89,80 @@ export default function UploadForm() {
       widthPixels: Math.round(requiredWidth * 300), // Assume 300 DPI
       heightPixels: Math.round(requiredHeight * 300)
     };
+  };
+  
+  // Analyze image dimensions when file is selected
+  const analyzeImageDimensions = (file: File) => {
+    return new Promise<{width: number, height: number, dpi?: number}>((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      
+      img.onload = () => {
+        const width = img.naturalWidth;
+        const height = img.naturalHeight;
+        URL.revokeObjectURL(url);
+        
+        // Try to estimate DPI (most images default to 72 DPI if not specified)
+        const estimatedDPI = 300; // Assume 300 DPI for print quality
+        
+        resolve({
+          width,
+          height,
+          dpi: estimatedDPI
+        });
+      };
+      
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Failed to load image'));
+      };
+      
+      img.src = url;
+    });
+  };
+  
+  // Check if image dimensions match requirements
+  const checkImageSizeMatch = (imageWidth: number, imageHeight: number, imageDPI: number = 300) => {
+    const requiredWidthPixels = imageDimensions.widthPixels;
+    const requiredHeightPixels = imageDimensions.heightPixels;
+    
+    const tolerance = 0.05; // 5% tolerance
+    const widthRatio = imageWidth / requiredWidthPixels;
+    const heightRatio = imageHeight / requiredHeightPixels;
+    
+    // Check if both dimensions are within tolerance
+    if (widthRatio >= (1 - tolerance) && widthRatio <= (1 + tolerance) &&
+        heightRatio >= (1 - tolerance) && heightRatio <= (1 + tolerance)) {
+      return 'perfect';
+    }
+    
+    // Check if image is too small (either dimension)
+    if (imageWidth < requiredWidthPixels || imageHeight < requiredHeightPixels) {
+      return 'too-small';
+    }
+    
+    // Otherwise it's too large
+    return 'too-large';
+  };
+  
+  const handleImageSelect = async (file: File | null) => {
+    setImageFile(file);
+    setImageAnalysis(null);
+    setImageSizeMatch('unknown');
+    
+    if (!file) return;
+    
+    try {
+      const analysis = await analyzeImageDimensions(file);
+      setImageAnalysis(analysis);
+      
+      if (pdfAnalysis) {
+        const match = checkImageSizeMatch(analysis.width, analysis.height, analysis.dpi);
+        setImageSizeMatch(match);
+      }
+    } catch (err) {
+      setError('Failed to analyze image dimensions');
+    }
   };
   
   const imageDimensions = calculateImageDimensions();
@@ -117,6 +193,12 @@ export default function UploadForm() {
       }
       
       setPdfAnalysis(data.analysis);
+      
+      // Re-check image size match if image is already selected
+      if (imageAnalysis) {
+        const match = checkImageSizeMatch(imageAnalysis.width, imageAnalysis.height, imageAnalysis.dpi);
+        setImageSizeMatch(match);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to analyze PDF');
     } finally {
@@ -139,6 +221,7 @@ export default function UploadForm() {
           imagePath,
           pdfPath,
           numPages,
+          numLeaves,
           pageType,
           position,
           mode: "single",
@@ -280,8 +363,9 @@ export default function UploadForm() {
                 <p>Width: {imageDimensions.width.toFixed(3)}" ({imageDimensions.widthPixels}px at 300 DPI)</p>
                 <p>Height: {imageDimensions.height.toFixed(3)}" ({imageDimensions.heightPixels}px at 300 DPI)</p>
                 <p className="text-xs text-gray-600 mt-2">
-                  Width = {numPages} pages × {PAGE_THICKNESS[pageType as keyof typeof PAGE_THICKNESS]}" thickness<br/>
-                  Height = {trimHeight}" + {BLEED_INCHES * 2}" full bleed
+                  Width = {numLeaves} leaves × {PAGE_THICKNESS[pageType as keyof typeof PAGE_THICKNESS]}" thickness<br/>
+                  Height = {trimHeight}" + {BLEED_INCHES * 2}" (top/bottom bleed)<br/>
+                  <em>({numPages} pages = {numLeaves} leaves, bleed only on outside edges)</em>
                 </p>
               </div>
             </div>
@@ -292,13 +376,39 @@ export default function UploadForm() {
                 id="image"
                 type="file"
                 accept="image/jpeg,image/png,image/gif,image/webp"
-                onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                onChange={(e) => handleImageSelect(e.target.files?.[0] || null)}
                 disabled={isUploading}
               />
               {imageFile && (
-                <p className="text-sm text-amber-600">
-                  Selected: {imageFile.name} ({formatFileSize(imageFile.size)})
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm text-amber-600">
+                    Selected: {imageFile.name} ({formatFileSize(imageFile.size)})
+                  </p>
+                  {imageAnalysis && (
+                    <div className="text-sm">
+                      <p className="text-gray-600">
+                        Actual size: {imageAnalysis.width} × {imageAnalysis.height} pixels
+                      </p>
+                      {imageSizeMatch === 'perfect' && (
+                        <div className="p-2 bg-green-100 border border-green-300 rounded text-green-800">
+                          ✅ Perfect size match! Your image dimensions are ideal for this project.
+                        </div>
+                      )}
+                      {imageSizeMatch === 'too-small' && (
+                        <div className="p-2 bg-red-100 border border-red-300 rounded text-red-800">
+                          ⚠️ Image too small! Required: {imageDimensions.widthPixels} × {imageDimensions.heightPixels} pixels. 
+                          Your image may appear pixelated when stretched.
+                        </div>
+                      )}
+                      {imageSizeMatch === 'too-large' && (
+                        <div className="p-2 bg-yellow-100 border border-yellow-300 rounded text-yellow-800">
+                          ⚠️ Image larger than needed. Required: {imageDimensions.widthPixels} × {imageDimensions.heightPixels} pixels. 
+                          This will work but may increase processing time.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             </div>
@@ -311,7 +421,7 @@ export default function UploadForm() {
             
             <div className="space-y-4">
               <div className="bg-white p-3 rounded border">
-                <p className="text-sm"><strong>Detected Pages:</strong> {numPages} pages</p>
+                <p className="text-sm"><strong>Detected Pages:</strong> {numPages} pages ({numLeaves} leaves)</p>
               </div>
               
               <div className="space-y-2">
@@ -323,10 +433,9 @@ export default function UploadForm() {
                   disabled={isUploading || isProcessing}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                 >
-                  <option value="white">White Paper (0.0025" thickness)</option>
-                  <option value="cream">Cream Paper (0.0027" thickness)</option>
-                  <option value="color">Color Paper (0.003" thickness)</option>
-                  <option value="bw">B&W Paper (0.0025" thickness)</option>
+                  <option value="bw">Black and White (0.0032" thickness)</option>
+                  <option value="standard">Standard Color (0.0032" thickness)</option>
+                  <option value="premium">Premium Color (0.0037" thickness)</option>
                 </select>
               </div>
             </div>
