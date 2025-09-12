@@ -33,6 +33,16 @@ export default function SimpleHome() {
     }
   };
 
+  const testPythonService = async () => {
+    try {
+      const response = await fetch('/api/test-python');
+      const result = await response.json();
+      alert('Python service status: ' + JSON.stringify(result));
+    } catch (error) {
+      alert('Error testing Python service: ' + (error as Error).message);
+    }
+  };
+
   const processActualPdf = async () => {
     if (!selectedImageFile || !selectedPdf) return;
 
@@ -123,6 +133,15 @@ export default function SimpleHome() {
                   <p className="text-xs text-green-600 mt-1">✅ Image uploaded</p>
                 )}
               </div>
+
+              {/* Test Python Service */}
+              <Button
+                onClick={testPythonService}
+                variant="outline"
+                className="w-full"
+              >
+                🔍 Test Python Service
+              </Button>
 
               {/* Process Button */}
               {selectedPdf && selectedImage && (
