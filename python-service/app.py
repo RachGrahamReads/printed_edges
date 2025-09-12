@@ -447,7 +447,9 @@ if __name__ == "__main__":
     import os
     try:
         port = int(os.environ.get("PORT", 5001))
+        print(f"Environment PORT: {os.environ.get('PORT', 'Not set')}")
         print(f"Starting server on port {port}")
+        print(f"All environment variables: {dict(os.environ)}")
         app.run(debug=False, port=port, host="0.0.0.0")  # Disable debug in production
     except Exception as e:
         print(f"Failed to start server: {e}")
