@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  // Temporarily disable Supabase middleware for deployment
+  // Temporarily disable Supabase middleware for deployment - fixed
   return NextResponse.next();
 }
 
