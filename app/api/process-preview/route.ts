@@ -63,8 +63,21 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error processing PDF for preview:', error);
+    
+    // If it's a JSON parsing error, it means we got HTML instead of expected response
+    const errorMessage = (error as Error).message;
+    if (errorMessage.includes('Unexpected token') && errorMessage.includes('not valid JSON')) {
+      return NextResponse.json(
+        { 
+          error: 'Python service returned HTML instead of expected response. This usually means the service is having issues.',
+          details: 'The Python service at Render may be sleeping, having dependency issues, or returning an error page.'
+        },
+        { status: 500 }
+      );
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to process PDF: ' + (error as Error).message },
+      { error: 'Failed to process PDF: ' + errorMessage },
       { status: 500 }
     );
   }
