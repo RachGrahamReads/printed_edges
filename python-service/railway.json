@@ -3,6 +3,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
+    "startCommand": "python app.py",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
