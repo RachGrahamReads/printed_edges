@@ -445,5 +445,11 @@ def health_check():
 
 if __name__ == "__main__":
     import os
-    port = int(os.environ.get("PORT", 5001))
-    app.run(debug=True, port=port, host="0.0.0.0")
+    try:
+        port = int(os.environ.get("PORT", 5001))
+        print(f"Starting server on port {port}")
+        app.run(debug=False, port=port, host="0.0.0.0")  # Disable debug in production
+    except Exception as e:
+        print(f"Failed to start server: {e}")
+        import traceback
+        traceback.print_exc()
