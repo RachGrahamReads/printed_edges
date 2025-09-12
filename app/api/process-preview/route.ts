@@ -53,21 +53,33 @@ export async function POST(request: NextRequest) {
     const contentType = pythonResponse.headers.get('content-type') || '';
     
     if (contentType.includes('application/json')) {
-      // Handle JSON error responses
+      // Handle JSON responses from Python service
       const jsonResponse = await pythonResponse.json();
+      
       if (jsonResponse.status === 'error') {
         return NextResponse.json({
           success: false,
           error: jsonResponse.message || 'Python service returned an error'
         }, { status: 500 });
       }
+      
+      if (jsonResponse.status === 'success') {
+        // This is our test response - Python service is working but not processing PDFs yet
+        return NextResponse.json({
+          success: false,
+          error: 'PDF processing temporarily disabled',
+          message: jsonResponse.message || 'Python service is in test mode'
+        });
+      }
+      
       return NextResponse.json({
         success: false,
-        error: 'Unexpected JSON response from Python service'
+        error: 'Unexpected response from Python service',
+        details: JSON.stringify(jsonResponse)
       }, { status: 500 });
     }
 
-    // Get the processed PDF as blob
+    // If we get here, it should be a PDF blob
     const processedPdfBlob = await pythonResponse.blob();
     
     // Convert blob to base64 for easier handling in frontend
