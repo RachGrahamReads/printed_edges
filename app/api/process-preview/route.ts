@@ -49,6 +49,24 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
+    // Check if response is JSON or binary (PDF)
+    const contentType = pythonResponse.headers.get('content-type') || '';
+    
+    if (contentType.includes('application/json')) {
+      // Handle JSON error responses
+      const jsonResponse = await pythonResponse.json();
+      if (jsonResponse.status === 'error') {
+        return NextResponse.json({
+          success: false,
+          error: jsonResponse.message || 'Python service returned an error'
+        }, { status: 500 });
+      }
+      return NextResponse.json({
+        success: false,
+        error: 'Unexpected JSON response from Python service'
+      }, { status: 500 });
+    }
+
     // Get the processed PDF as blob
     const processedPdfBlob = await pythonResponse.blob();
     
