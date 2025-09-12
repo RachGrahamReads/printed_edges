@@ -6,9 +6,7 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  experimental: {
-    serverComponentsExternalPackages: ['@supabase/supabase-js', '@supabase/ssr'],
-  },
+  serverExternalPackages: ['@supabase/supabase-js', '@supabase/ssr'],
   webpack: (config, { isServer }) => {
     if (!isServer) {
       // Ignore Supabase realtime on client side to prevent Edge Runtime issues
