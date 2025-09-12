@@ -22,7 +22,7 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [pdfDocument, setPdfDocument] = useState<any>(null);
+  const [pdfDocument, setPdfDocument] = useState<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
   const [pdfPages, setPdfPages] = useState<string[]>([]);
   const [useCustomDimensions, setUseCustomDimensions] = useState(false);
 
@@ -48,7 +48,7 @@ export default function Home() {
     if (currentPage > 1 && !pdfPages[currentPage - 2]) {
       loadMorePages(currentPage - 1);
     }
-  }, [currentPage, pdfDocument, totalPages, pdfPages]);
+  }, [currentPage, pdfDocument, totalPages, pdfPages, loadMorePages]);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -83,7 +83,7 @@ export default function Home() {
     const fileUrl = URL.createObjectURL(file);
     
     // Load PDF.js
-    const pdfjsLib = (window as any).pdfjsLib;
+    const pdfjsLib = (window as any).pdfjsLib; // eslint-disable-line @typescript-eslint/no-explicit-any
     if (!pdfjsLib) {
       // Load PDF.js if not already loaded
       const script = document.createElement('script');
