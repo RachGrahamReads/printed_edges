@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
-    const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:5001';
-    const fullUrl = pythonServiceUrl.startsWith('http') ? pythonServiceUrl : `https://${pythonServiceUrl}`;
+    // Use localhost for development
+    const fullUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:5001';
     
     console.log('Testing Python service at:', fullUrl);
     

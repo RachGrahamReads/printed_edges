@@ -31,9 +31,9 @@ export async function POST(request: NextRequest) {
 
     // For now, we'll need to create a temporary endpoint in Python service that accepts files
     // Since the current /process endpoint expects URLs, let's call a new endpoint
-    // Use environment variable for Python service URL
+    // Use localhost for development, environment variable for production
     const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:5001';
-    const fullUrl = pythonServiceUrl.startsWith('http') ? pythonServiceUrl : `https://${pythonServiceUrl}`;
+    const fullUrl = pythonServiceUrl;
     const pythonResponse = await fetch(`${fullUrl}/process-files`, {
       method: 'POST',
       body: pythonFormData,
