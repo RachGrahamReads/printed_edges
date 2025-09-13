@@ -349,10 +349,17 @@ def process_pdf_files_multi_edge(pdf_path, edge_files_dict, trim_width, trim_hei
             edge_images['side'] = Image.open(edge_files_dict['side']).convert("RGBA")
         else:  # all-edges
             print("Loading all-edges images")
-            edge_images['top'] = Image.open(edge_files_dict['topEdge']).convert("RGBA")
-            edge_images['side'] = Image.open(edge_files_dict['edge']).convert("RGBA") 
-            edge_images['bottom'] = Image.open(edge_files_dict['bottomEdge']).convert("RGBA")
-            print(f"Loaded images - top: {edge_images['top'].size}, side: {edge_images['side'].size}, bottom: {edge_images['bottom'].size}")
+            # Only load images that are provided
+            if 'topEdge' in edge_files_dict:
+                edge_images['top'] = Image.open(edge_files_dict['topEdge']).convert("RGBA")
+            if 'edge' in edge_files_dict:
+                edge_images['side'] = Image.open(edge_files_dict['edge']).convert("RGBA") 
+            if 'bottomEdge' in edge_files_dict:
+                edge_images['bottom'] = Image.open(edge_files_dict['bottomEdge']).convert("RGBA")
+            
+            loaded_edges = [key for key in ['top', 'side', 'bottom'] if key in edge_images]
+            sizes = [f"{key}: {edge_images[key].size}" for key in loaded_edges]
+            print(f"Loaded images - {', '.join(sizes)}")
 
         previous_slice = None
 
@@ -430,110 +437,115 @@ def process_pdf_files_multi_edge(pdf_path, edge_files_dict, trim_width, trim_hei
                 leaf_number = page_num // 2
                 total_thickness_inches = page_thickness_inches * num_leaves
                 
-                # Add top edge with mirroring logic
-                top_img = edge_images['top']
-                top_width, top_height = top_img.size
-                print(f"Processing top edge for page {page_num + 1}: image size {top_width}x{top_height}")
-                
-                edge_strip_height = BLEED_POINTS + SAFETY_BUFFER_POINTS
-                
-                if page_num % 2 == 0:  # Right page (odd page number in book) - create new slice
-                    # For top/bottom edges, slice based on thickness (width direction like side edges)
-                    single_leaf_thickness_pixels_top = max(1, int(top_height * (page_thickness_inches / total_thickness_inches)))
+                # Add top edge with mirroring logic (only if top edge image is provided)
+                if 'top' in edge_images:
+                    top_img = edge_images['top']
+                    top_width, top_height = top_img.size
+                    print(f"Processing top edge for page {page_num + 1}: image size {top_width}x{top_height}")
                     
-                    top_slice_y_start = leaf_number * single_leaf_thickness_pixels_top
-                    top_slice_y_end = top_slice_y_start + single_leaf_thickness_pixels_top
+                    edge_strip_height = BLEED_POINTS + SAFETY_BUFFER_POINTS
                     
-                    print(f"Top edge slice: y={top_slice_y_start}-{top_slice_y_end}, thickness_pixels={single_leaf_thickness_pixels_top}")
+                    if page_num % 2 == 0:  # Right page (odd page number in book) - create new slice
+                        # For top/bottom edges, slice based on thickness (width direction like side edges)
+                        single_leaf_thickness_pixels_top = max(1, int(top_height * (page_thickness_inches / total_thickness_inches)))
+                        
+                        top_slice_y_start = leaf_number * single_leaf_thickness_pixels_top
+                        top_slice_y_end = top_slice_y_start + single_leaf_thickness_pixels_top
+                        
+                        print(f"Top edge slice: y={top_slice_y_start}-{top_slice_y_end}, thickness_pixels={single_leaf_thickness_pixels_top}")
+                        
+                        top_slice = top_img.crop((0, top_slice_y_start, top_width, top_slice_y_end))
+                        top_slice = top_slice.resize((int(new_width), single_leaf_thickness_pixels_top), Image.Resampling.LANCZOS)
+                        top_stretched = top_slice.resize((int(new_width), int(edge_strip_height)), Image.Resampling.LANCZOS)
+                        
+                        # Store the slice for mirroring on the back page
+                        if 'previous_top_slice' not in locals():
+                            globals()['previous_top_slice'] = top_stretched
+                        else:
+                            globals()['previous_top_slice'] = top_stretched
+                    else:  # Left page (even page number in book) - use mirrored slice
+                        if 'previous_top_slice' not in globals():
+                            raise ValueError("Left page without previous top slice!")
+                        top_stretched = ImageOps.mirror(globals()['previous_top_slice'])
                     
-                    top_slice = top_img.crop((0, top_slice_y_start, top_width, top_slice_y_end))
-                    top_slice = top_slice.resize((int(new_width), single_leaf_thickness_pixels_top), Image.Resampling.LANCZOS)
-                    top_stretched = top_slice.resize((int(new_width), int(edge_strip_height)), Image.Resampling.LANCZOS)
+                    # Position top edge
+                    top_rect = fitz.Rect(0, 0, new_width, edge_strip_height)
+                    print(f"Top edge rect: {top_rect}, strip height: {edge_strip_height}")
                     
-                    # Store the slice for mirroring on the back page
-                    if 'previous_top_slice' not in locals():
-                        globals()['previous_top_slice'] = top_stretched
-                    else:
-                        globals()['previous_top_slice'] = top_stretched
-                else:  # Left page (even page number in book) - use mirrored slice
-                    if 'previous_top_slice' not in globals():
-                        raise ValueError("Left page without previous top slice!")
-                    top_stretched = ImageOps.mirror(globals()['previous_top_slice'])
+                    top_bytes = BytesIO()
+                    top_stretched.save(top_bytes, format="PNG")
+                    top_bytes.seek(0)
+                    new_page.insert_image(top_rect, stream=top_bytes.read(), keep_proportion=False)
                 
-                # Position top edge
-                top_rect = fitz.Rect(0, 0, new_width, edge_strip_height)
-                print(f"Top edge rect: {top_rect}, strip height: {edge_strip_height}")
-                
-                top_bytes = BytesIO()
-                top_stretched.save(top_bytes, format="PNG")
-                top_bytes.seek(0)
-                new_page.insert_image(top_rect, stream=top_bytes.read(), keep_proportion=False)
-                
-                # Add bottom edge with mirroring logic
-                bottom_img = edge_images['bottom']
-                bottom_width, bottom_height = bottom_img.size
-                print(f"Processing bottom edge for page {page_num + 1}: image size {bottom_width}x{bottom_height}")
-                
-                if page_num % 2 == 0:  # Right page (odd page number in book) - create new slice
-                    # Use same slicing logic for bottom edge
-                    single_leaf_thickness_pixels_bottom = max(1, int(bottom_height * (page_thickness_inches / total_thickness_inches)))
+                # Add bottom edge with mirroring logic (only if bottom edge image is provided)
+                if 'bottom' in edge_images:
+                    bottom_img = edge_images['bottom']
+                    bottom_width, bottom_height = bottom_img.size
+                    print(f"Processing bottom edge for page {page_num + 1}: image size {bottom_width}x{bottom_height}")
                     
-                    bottom_slice_y_start = leaf_number * single_leaf_thickness_pixels_bottom
-                    bottom_slice_y_end = bottom_slice_y_start + single_leaf_thickness_pixels_bottom
+                    edge_strip_height = BLEED_POINTS + SAFETY_BUFFER_POINTS
                     
-                    print(f"Bottom edge slice: y={bottom_slice_y_start}-{bottom_slice_y_end}, thickness_pixels={single_leaf_thickness_pixels_bottom}")
+                    if page_num % 2 == 0:  # Right page (odd page number in book) - create new slice
+                        # Use same slicing logic for bottom edge
+                        single_leaf_thickness_pixels_bottom = max(1, int(bottom_height * (page_thickness_inches / total_thickness_inches)))
+                        
+                        bottom_slice_y_start = leaf_number * single_leaf_thickness_pixels_bottom
+                        bottom_slice_y_end = bottom_slice_y_start + single_leaf_thickness_pixels_bottom
+                        
+                        print(f"Bottom edge slice: y={bottom_slice_y_start}-{bottom_slice_y_end}, thickness_pixels={single_leaf_thickness_pixels_bottom}")
+                        
+                        bottom_slice = bottom_img.crop((0, bottom_slice_y_start, bottom_width, bottom_slice_y_end))
+                        bottom_slice = bottom_slice.resize((int(new_width), single_leaf_thickness_pixels_bottom), Image.Resampling.LANCZOS)
+                        bottom_stretched = bottom_slice.resize((int(new_width), int(edge_strip_height)), Image.Resampling.LANCZOS)
+                        
+                        # Store the slice for mirroring on the back page
+                        if 'previous_bottom_slice' not in locals():
+                            globals()['previous_bottom_slice'] = bottom_stretched
+                        else:
+                            globals()['previous_bottom_slice'] = bottom_stretched
+                    else:  # Left page (even page number in book) - use mirrored slice
+                        if 'previous_bottom_slice' not in globals():
+                            raise ValueError("Left page without previous bottom slice!")
+                        bottom_stretched = ImageOps.mirror(globals()['previous_bottom_slice'])
                     
-                    bottom_slice = bottom_img.crop((0, bottom_slice_y_start, bottom_width, bottom_slice_y_end))
-                    bottom_slice = bottom_slice.resize((int(new_width), single_leaf_thickness_pixels_bottom), Image.Resampling.LANCZOS)
-                    bottom_stretched = bottom_slice.resize((int(new_width), int(edge_strip_height)), Image.Resampling.LANCZOS)
+                    # Position bottom edge
+                    bottom_y = new_height - edge_strip_height
+                    bottom_rect = fitz.Rect(0, bottom_y, new_width, new_height)
+                    print(f"Bottom edge rect: {bottom_rect}, strip height: {edge_strip_height}")
                     
-                    # Store the slice for mirroring on the back page
-                    if 'previous_bottom_slice' not in locals():
-                        globals()['previous_bottom_slice'] = bottom_stretched
-                    else:
-                        globals()['previous_bottom_slice'] = bottom_stretched
-                else:  # Left page (even page number in book) - use mirrored slice
-                    if 'previous_bottom_slice' not in globals():
-                        raise ValueError("Left page without previous bottom slice!")
-                    bottom_stretched = ImageOps.mirror(globals()['previous_bottom_slice'])
+                    bottom_bytes = BytesIO()
+                    bottom_stretched.save(bottom_bytes, format="PNG")
+                    bottom_bytes.seek(0)
+                    new_page.insert_image(bottom_rect, stream=bottom_bytes.read(), keep_proportion=False)
                 
-                # Position bottom edge
-                bottom_y = new_height - edge_strip_height
-                bottom_rect = fitz.Rect(0, bottom_y, new_width, new_height)
-                print(f"Bottom edge rect: {bottom_rect}, strip height: {edge_strip_height}")
-                
-                bottom_bytes = BytesIO()
-                bottom_stretched.save(bottom_bytes, format="PNG")
-                bottom_bytes.seek(0)
-                new_page.insert_image(bottom_rect, stream=bottom_bytes.read(), keep_proportion=False)
-                
-                # Add side edge (same logic as side-only mode)
-                side_img = edge_images['side']
-                side_width, side_height = side_img.size
-                
-                side_slice_x_start = leaf_number * max(1, int(side_width * (page_thickness_inches / total_thickness_inches)))
-                side_slice_x_end = side_slice_x_start + max(1, int(side_width * (page_thickness_inches / total_thickness_inches)))
-                
-                side_slice = side_img.crop((side_slice_x_start, 0, side_slice_x_end, side_height))
-                side_slice = side_slice.resize((max(1, int(side_width * (page_thickness_inches / total_thickness_inches))), int(new_height)), Image.Resampling.LANCZOS)
-                
-                side_strip_width = BLEED_POINTS + SAFETY_BUFFER_POINTS
-                side_stretched = side_slice.resize((int(side_strip_width), int(new_height)), Image.Resampling.LANCZOS)
-                
-                if page_num % 2 == 0:  # Right page
-                    side_x = new_width - side_strip_width
-                    side_rect = fitz.Rect(side_x, 0, new_width, new_height)
-                    previous_slice = side_stretched
-                else:  # Left page
-                    if previous_slice is None:
-                        raise ValueError("Even page without previous slice!")
-                    side_stretched = ImageOps.mirror(previous_slice)
-                    side_rect = fitz.Rect(0, 0, side_strip_width, new_height)
-                
-                side_bytes = BytesIO()
-                side_stretched.save(side_bytes, format="PNG")
-                side_bytes.seek(0)
-                new_page.insert_image(side_rect, stream=side_bytes.read(), keep_proportion=False)
+                # Add side edge (only if side edge image is provided)
+                if 'side' in edge_images:
+                    side_img = edge_images['side']
+                    side_width, side_height = side_img.size
+                    
+                    side_slice_x_start = leaf_number * max(1, int(side_width * (page_thickness_inches / total_thickness_inches)))
+                    side_slice_x_end = side_slice_x_start + max(1, int(side_width * (page_thickness_inches / total_thickness_inches)))
+                    
+                    side_slice = side_img.crop((side_slice_x_start, 0, side_slice_x_end, side_height))
+                    side_slice = side_slice.resize((max(1, int(side_width * (page_thickness_inches / total_thickness_inches))), int(new_height)), Image.Resampling.LANCZOS)
+                    
+                    side_strip_width = BLEED_POINTS + SAFETY_BUFFER_POINTS
+                    side_stretched = side_slice.resize((int(side_strip_width), int(new_height)), Image.Resampling.LANCZOS)
+                    
+                    if page_num % 2 == 0:  # Right page
+                        side_x = new_width - side_strip_width
+                        side_rect = fitz.Rect(side_x, 0, new_width, new_height)
+                        previous_slice = side_stretched
+                    else:  # Left page
+                        if previous_slice is None:
+                            raise ValueError("Even page without previous slice!")
+                        side_stretched = ImageOps.mirror(previous_slice)
+                        side_rect = fitz.Rect(0, 0, side_strip_width, new_height)
+                    
+                    side_bytes = BytesIO()
+                    side_stretched.save(side_bytes, format="PNG")
+                    side_bytes.seek(0)
+                    new_page.insert_image(side_rect, stream=side_bytes.read(), keep_proportion=False)
 
         # Save the new PDF
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
