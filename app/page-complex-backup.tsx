@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { processPDFWithSupabase } from '@/lib/supabase';
 
 export default function Home() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -158,29 +159,23 @@ export default function Home() {
 
     setIsProcessing(true);
     try {
-      // Create FormData to send files
-      const formData = new FormData();
-      formData.append('pdf', selectedPdf);
-      formData.append('edge', selectedImageFile);
-      formData.append('numPages', totalPages.toString());
-      formData.append('pageType', pageType);
-      formData.append('bleedType', bleedType);
-      formData.append('trimWidth', bookWidth.toString());
-      formData.append('trimHeight', bookHeight.toString());
+      const edgeFiles = { side: selectedImageFile };
 
-      const response = await fetch('/api/process-preview', {
-        method: 'POST',
-        body: formData,
-      });
+      const result = await processPDFWithSupabase(
+        selectedPdf,
+        edgeFiles,
+        {
+          numPages: totalPages,
+          pageType,
+          bleedType: bleedType as 'add_bleed' | 'existing_bleed',
+          edgeType: 'side-only'
+        }
+      );
 
-      const result = await response.json();
-      
-      if (result.success) {
-        setProcessedPdfUrl(result.pdfData);
-        // Keep current view mode, download will appear in left panel
-      } else {
-        throw new Error(result.error || 'Failed to process PDF');
-      }
+      // Convert the result to a data URL for download
+      const blob = new Blob([result], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      setProcessedPdfUrl(url);
     } catch (error) {
       console.error('Error processing PDF:', error);
       alert('Failed to process PDF: ' + (error as Error).message);
