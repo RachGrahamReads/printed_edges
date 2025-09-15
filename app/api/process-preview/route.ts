@@ -5,29 +5,66 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     
     const pdfFile = formData.get('pdf') as File;
-    const edgeFile = formData.get('edge') as File;
     const numPages = parseInt(formData.get('numPages') as string) || 30;
     const pageType = formData.get('pageType') as string || 'standard';
     const bleedType = formData.get('bleedType') as string || 'add_bleed';
     const trimWidth = parseFloat(formData.get('trimWidth') as string) || 6;
     const trimHeight = parseFloat(formData.get('trimHeight') as string) || 9;
+    const edgeType = formData.get('edgeType') as string || 'side-only';
 
-    if (!pdfFile || !edgeFile) {
+    if (!pdfFile) {
       return NextResponse.json(
-        { error: 'PDF file and edge image file are required' },
+        { error: 'PDF file is required' },
         { status: 400 }
       );
+    }
+
+    // Validate edge files based on edge type
+    if (edgeType === 'side-only') {
+      const edgeFile = formData.get('edge') as File;
+      if (!edgeFile) {
+        return NextResponse.json(
+          { error: 'Side edge image file is required' },
+          { status: 400 }
+        );
+      }
+    } else if (edgeType === 'all-edges') {
+      const topEdgeFile = formData.get('topEdge') as File;
+      const sideEdgeFile = formData.get('edge') as File;
+      const bottomEdgeFile = formData.get('bottomEdge') as File;
+      
+      if (!topEdgeFile && !sideEdgeFile && !bottomEdgeFile) {
+        return NextResponse.json(
+          { error: 'At least one edge image file is required for all-edges mode' },
+          { status: 400 }
+        );
+      }
     }
 
     // Create form data for Python service
     const pythonFormData = new FormData();
     pythonFormData.append('pdf', pdfFile);
-    pythonFormData.append('edge', edgeFile);
     pythonFormData.append('num_pages', numPages.toString());
     pythonFormData.append('page_type', pageType);
     pythonFormData.append('bleed_type', bleedType);
     pythonFormData.append('trim_width', trimWidth.toString());
     pythonFormData.append('trim_height', trimHeight.toString());
+    pythonFormData.append('edge_type', edgeType);
+
+    // Append edge files based on edge type
+    if (edgeType === 'side-only') {
+      const edgeFile = formData.get('edge') as File;
+      pythonFormData.append('edge', edgeFile);
+    } else if (edgeType === 'all-edges') {
+      const topEdgeFile = formData.get('topEdge') as File;
+      const sideEdgeFile = formData.get('edge') as File;
+      const bottomEdgeFile = formData.get('bottomEdge') as File;
+      
+      // Only append files that are actually uploaded
+      if (topEdgeFile && topEdgeFile.size > 0) pythonFormData.append('topEdge', topEdgeFile);
+      if (sideEdgeFile && sideEdgeFile.size > 0) pythonFormData.append('edge', sideEdgeFile);
+      if (bottomEdgeFile && bottomEdgeFile.size > 0) pythonFormData.append('bottomEdge', bottomEdgeFile);
+    }
 
     // For now, we'll need to create a temporary endpoint in Python service that accepts files
     // Since the current /process endpoint expects URLs, let's call a new endpoint

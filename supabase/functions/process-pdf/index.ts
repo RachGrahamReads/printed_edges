@@ -1,0 +1,350 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { PDFDocument, rgb } from "npm:pdf-lib@1.17.1";
+
+// CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+// Constants
+const BLEED_INCHES = 0.125;
+const SAFETY_BUFFER_INCHES = 0.125;
+const POINTS_PER_INCH = 72;
+const BLEED_POINTS = BLEED_INCHES * POINTS_PER_INCH;
+const SAFETY_BUFFER_POINTS = SAFETY_BUFFER_INCHES * POINTS_PER_INCH;
+
+// Page thickness per type in inches
+const PAGE_THICKNESS: Record<string, number> = {
+  "bw": 0.0032,
+  "standard": 0.0032,
+  "premium": 0.0037
+};
+
+interface ProcessRequest {
+  pdfBase64: string;
+  edgeImages: {
+    side?: { base64: string; };
+    top?: { base64: string; };
+    bottom?: { base64: string; };
+  };
+  numPages: number;
+  pageType: string;
+  bleedType: 'add_bleed' | 'existing_bleed';
+  edgeType: 'side-only' | 'all-edges';
+  trimWidth?: number;
+  trimHeight?: number;
+}
+
+async function base64ToUint8Array(base64: string): Promise<Uint8Array> {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    const requestData: ProcessRequest = await req.json();
+
+    console.log('Processing PDF request...');
+    console.log('Request received:', {
+      hasPdf: !!requestData.pdfBase64,
+      hasEdgeImages: !!requestData.edgeImages,
+      edgeType: requestData.edgeType,
+      numPages: requestData.numPages
+    });
+
+    // Validate required fields
+    if (!requestData.pdfBase64) {
+      throw new Error("PDF base64 data is required");
+    }
+
+    if (!requestData.edgeImages ||
+        (requestData.edgeType === 'side-only' && !requestData.edgeImages.side) ||
+        (requestData.edgeType === 'all-edges' && !requestData.edgeImages.side && !requestData.edgeImages.top && !requestData.edgeImages.bottom)) {
+      throw new Error("Edge images are required based on edge type");
+    }
+
+    // Convert base64 PDF to bytes
+    const pdfBytes = await base64ToUint8Array(requestData.pdfBase64);
+    console.log('PDF bytes loaded:', pdfBytes.length);
+
+    // Load the PDF
+    const pdfDoc = await PDFDocument.load(pdfBytes, {
+      ignoreEncryption: true,
+      updateMetadata: false
+    });
+
+    const pages = pdfDoc.getPages();
+    console.log('PDF loaded with', pages.length, 'pages');
+
+    if (pages.length === 0) {
+      throw new Error("PDF has no pages");
+    }
+
+    const firstPage = pages[0];
+    const { width: originalWidth, height: originalHeight } = firstPage.getSize();
+    console.log('Original page size:', originalWidth, 'x', originalHeight);
+
+    // Calculate bleed dimensions
+    let newWidth = originalWidth;
+    let newHeight = originalHeight;
+    let bleedPoints = 0;
+
+    if (requestData.bleedType === 'add_bleed') {
+      bleedPoints = BLEED_POINTS;
+      newWidth = originalWidth + bleedPoints;
+      newHeight = originalHeight + (2 * bleedPoints);
+      console.log('Adding bleed - new size:', newWidth, 'x', newHeight);
+    }
+
+    // Calculate number of leaves
+    const numLeaves = Math.ceil(requestData.numPages / 2);
+    const pageThicknessInches = PAGE_THICKNESS[requestData.pageType.toLowerCase()] || 0.0032;
+
+    // Create new PDF
+    const newPdfDoc = await PDFDocument.create();
+
+    // Set metadata
+    newPdfDoc.setTitle('Processed PDF with Edges');
+    newPdfDoc.setProducer('Printed Edges App');
+    newPdfDoc.setCreationDate(new Date());
+    newPdfDoc.setModificationDate(new Date());
+
+    // Cache for embedded images
+    let sideImageCache = {};
+    let topImageCache = {};
+    let bottomImageCache = {};
+
+    console.log('Created new PDF document');
+
+    // Process each page
+    for (let pageNum = 0; pageNum < pages.length; pageNum++) {
+      console.log(`Processing page ${pageNum + 1}/${pages.length}`);
+
+      // Create new page with bleed dimensions
+      const newPage = newPdfDoc.addPage([newWidth, newHeight]);
+
+      // Embed the original page
+      const [embeddedPage] = await newPdfDoc.embedPdf(pdfDoc, [pageNum]);
+
+      // Position original content based on bleed type
+      let xPos = 0;
+      let yPos = 0;
+
+      if (requestData.bleedType === 'add_bleed') {
+        if (pageNum % 2 === 0) {
+          // Right page - content stays at left
+          xPos = 0;
+          yPos = bleedPoints;
+        } else {
+          // Left page - content moves right
+          xPos = bleedPoints;
+          yPos = bleedPoints;
+        }
+      }
+
+      // Draw the original page content
+      newPage.drawPage(embeddedPage, {
+        x: xPos,
+        y: yPos,
+        width: originalWidth,
+        height: originalHeight,
+      });
+
+      // Add edge image processing
+      const edgeStripWidth = BLEED_POINTS + SAFETY_BUFFER_POINTS;
+      const leafNumber = Math.floor(pageNum / 2);
+
+      // Process side edges - simplified version without Canvas
+      if (requestData.edgeType === 'side-only' || requestData.edgeImages.side) {
+        try {
+          const base64Data = requestData.edgeImages.side.base64;
+          const flipHorizontally = pageNum % 2 !== 0; // Left pages are flipped
+          const cacheKey = `${leafNumber}_${flipHorizontally}`;
+
+          // For production, use the full image for now (slicing will be added later)
+          if (!sideImageCache[cacheKey]) {
+            const imageBytes = await base64ToUint8Array(base64Data);
+            sideImageCache[cacheKey] = await newPdfDoc.embedPng(imageBytes);
+          }
+
+          // Position the image
+          let sideX;
+          if (pageNum % 2 === 0) {
+            // Right page
+            sideX = newWidth - edgeStripWidth;
+          } else {
+            // Left page
+            sideX = 0;
+          }
+
+          // Draw the edge image with transform for flipping
+          if (flipHorizontally) {
+            newPage.drawImage(sideImageCache[cacheKey], {
+              x: 0,
+              y: 0,
+              width: edgeStripWidth,
+              height: newHeight,
+              transform: [-1, 0, 0, 1, edgeStripWidth, 0] // Horizontal flip matrix
+            });
+          } else {
+            newPage.drawImage(sideImageCache[cacheKey], {
+              x: sideX,
+              y: 0,
+              width: edgeStripWidth,
+              height: newHeight,
+            });
+          }
+
+          console.log(`Added side edge image to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
+        } catch (error) {
+          console.error(`Failed to add side edge to page ${pageNum + 1}:`, error.message);
+          // Fallback to colored rectangle
+          let sideX = pageNum % 2 === 0 ? newWidth - edgeStripWidth : 0;
+          newPage.drawRectangle({
+            x: sideX,
+            y: 0,
+            width: edgeStripWidth,
+            height: newHeight,
+            color: rgb(0.65, 0.45, 0.25),
+            opacity: 0.3,
+          });
+        }
+      }
+
+      // Add top/bottom edges for all-edges mode
+      if (requestData.edgeType === 'all-edges') {
+        const edgeStripHeight = BLEED_POINTS + SAFETY_BUFFER_POINTS;
+
+        // Top edge
+        if (requestData.edgeImages.top) {
+          try {
+            const base64Data = requestData.edgeImages.top.base64;
+            const flipHorizontally = pageNum % 2 !== 0; // Left pages are flipped
+            const cacheKey = `${leafNumber}_${flipHorizontally}`;
+
+            if (!topImageCache[cacheKey]) {
+              const imageBytes = await base64ToUint8Array(base64Data);
+              topImageCache[cacheKey] = await newPdfDoc.embedPng(imageBytes);
+            }
+
+            if (flipHorizontally) {
+              newPage.drawImage(topImageCache[cacheKey], {
+                x: 0,
+                y: newHeight - edgeStripHeight,
+                width: newWidth,
+                height: edgeStripHeight,
+                transform: [-1, 0, 0, 1, newWidth, newHeight - edgeStripHeight]
+              });
+            } else {
+              newPage.drawImage(topImageCache[cacheKey], {
+                x: 0,
+                y: newHeight - edgeStripHeight,
+                width: newWidth,
+                height: edgeStripHeight,
+              });
+            }
+
+            console.log(`Added top edge image to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
+          } catch (error) {
+            console.error(`Failed to add top edge to page ${pageNum + 1}:`, error.message);
+            newPage.drawRectangle({
+              x: 0,
+              y: newHeight - edgeStripHeight,
+              width: newWidth,
+              height: edgeStripHeight,
+              color: rgb(0.6, 0.4, 0.2),
+              opacity: 0.3,
+            });
+          }
+        }
+
+        // Bottom edge
+        if (requestData.edgeImages.bottom) {
+          try {
+            const base64Data = requestData.edgeImages.bottom.base64;
+            const flipHorizontally = pageNum % 2 !== 0; // Left pages are flipped
+            const cacheKey = `${leafNumber}_${flipHorizontally}`;
+
+            if (!bottomImageCache[cacheKey]) {
+              const imageBytes = await base64ToUint8Array(base64Data);
+              bottomImageCache[cacheKey] = await newPdfDoc.embedPng(imageBytes);
+            }
+
+            if (flipHorizontally) {
+              newPage.drawImage(bottomImageCache[cacheKey], {
+                x: 0,
+                y: 0,
+                width: newWidth,
+                height: edgeStripHeight,
+                transform: [-1, 0, 0, 1, newWidth, 0]
+              });
+            } else {
+              newPage.drawImage(bottomImageCache[cacheKey], {
+                x: 0,
+                y: 0,
+                width: newWidth,
+                height: edgeStripHeight,
+              });
+            }
+
+            console.log(`Added bottom edge image to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
+          } catch (error) {
+            console.error(`Failed to add bottom edge to page ${pageNum + 1}:`, error.message);
+            newPage.drawRectangle({
+              x: 0,
+              y: 0,
+              width: newWidth,
+              height: edgeStripHeight,
+              color: rgb(0.55, 0.35, 0.15),
+              opacity: 0.3,
+            });
+          }
+        }
+      }
+    }
+
+    console.log('Finished processing all pages, saving PDF...');
+
+    // Save with compression options
+    const processedPdfBytes = await newPdfDoc.save({
+      useObjectStreams: false,
+      addDefaultPage: false,
+      objectsPerTick: 50,
+    });
+
+    console.log('PDF saved successfully, size:', processedPdfBytes.length, 'bytes');
+
+    // Convert to base64 for response
+    const base64Pdf = btoa(String.fromCharCode(...processedPdfBytes));
+
+    return new Response(JSON.stringify({
+      success: true,
+      pdfData: `data:application/pdf;base64,${base64Pdf}`
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    });
+
+  } catch (error) {
+    console.error('Error processing PDF:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      details: 'PDF processing failed in Edge Function'
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500,
+    });
+  }
+});
