@@ -44,13 +44,8 @@ export async function processPDFWithSupabase(
 
     if (pdfError) throw new Error(`Failed to upload PDF: ${pdfError.message}`);
 
-    // Get public URL for PDF
-    const { data: pdfUrlData } = supabase.storage
-      .from('pdfs')
-      .getPublicUrl(pdfPath);
-
-    // Upload edge images directly and get their URLs
-    const edgeUrls: any = {};
+    // Upload edge images directly and track their paths
+    const edgePaths: any = {};
 
     if (edgeFiles.side) {
       const sidePath = `${sessionId}/edge-side.png`;
@@ -63,11 +58,7 @@ export async function processPDFWithSupabase(
 
       if (sideError) throw new Error(`Failed to upload side edge: ${sideError.message}`);
 
-      const { data: sideUrlData } = supabase.storage
-        .from('edge-images')
-        .getPublicUrl(sidePath);
-
-      edgeUrls.side = sideUrlData.publicUrl;
+      edgePaths.side = sidePath;
     }
 
     if (edgeFiles.top) {
@@ -81,11 +72,7 @@ export async function processPDFWithSupabase(
 
       if (topError) throw new Error(`Failed to upload top edge: ${topError.message}`);
 
-      const { data: topUrlData } = supabase.storage
-        .from('edge-images')
-        .getPublicUrl(topPath);
-
-      edgeUrls.top = topUrlData.publicUrl;
+      edgePaths.top = topPath;
     }
 
     if (edgeFiles.bottom) {
@@ -99,18 +86,14 @@ export async function processPDFWithSupabase(
 
       if (bottomError) throw new Error(`Failed to upload bottom edge: ${bottomError.message}`);
 
-      const { data: bottomUrlData } = supabase.storage
-        .from('edge-images')
-        .getPublicUrl(bottomPath);
-
-      edgeUrls.bottom = bottomUrlData.publicUrl;
+      edgePaths.bottom = bottomPath;
     }
 
-    // Call Supabase Edge Function with storage URLs
+    // Call Supabase Edge Function with storage paths
     const { data, error } = await supabase.functions.invoke('process-pdf-urls', {
       body: {
-        pdfUrl: pdfUrlData.publicUrl,
-        edgeUrls,
+        pdfPath: pdfPath,
+        edgePaths,
         numPages: options.numPages,
         pageType: options.pageType,
         bleedType: options.bleedType,
@@ -122,11 +105,15 @@ export async function processPDFWithSupabase(
     if (error) throw error;
 
     // Handle the response from Edge Function
-    if (data.processedPdfUrl) {
-      // Download the processed PDF
-      const response = await fetch(data.processedPdfUrl);
-      if (!response.ok) throw new Error('Failed to download processed PDF');
-      return await response.arrayBuffer();
+    if (data.success) {
+      // Download the processed PDF directly from storage using Supabase SDK
+      const { data: pdfData, error: downloadError } = await supabase.storage
+        .from('processed-pdfs')
+        .download(`${sessionId}/processed.pdf`);
+
+      if (downloadError) throw new Error(`Failed to download processed PDF: ${downloadError.message}`);
+
+      return await pdfData.arrayBuffer();
     }
 
     // Fallback: if Edge Function returns base64 data directly

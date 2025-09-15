@@ -24,11 +24,11 @@ const PAGE_THICKNESS: Record<string, number> = {
 };
 
 interface ProcessRequest {
-  pdfUrl: string;
-  edgeUrls: {
-    side?: string;
-    top?: string;
-    bottom?: string;
+  pdfPath: string; // Storage path, not URL
+  edgePaths: {
+    side?: string; // Storage path, not URL
+    top?: string;   // Storage path, not URL
+    bottom?: string; // Storage path, not URL
   };
   numPages: number;
   pageType: string;
@@ -37,7 +37,21 @@ interface ProcessRequest {
   outputPath: string;
 }
 
-// Helper to download file from URL
+// Helper to download file from Supabase storage
+async function downloadFromStorage(supabase: any, bucket: string, path: string): Promise<Uint8Array> {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .download(path);
+
+  if (error) {
+    throw new Error(`Failed to download from storage ${bucket}/${path}: ${error.message}`);
+  }
+
+  const arrayBuffer = await data.arrayBuffer();
+  return new Uint8Array(arrayBuffer);
+}
+
+// Helper to download file from URL (fallback for external URLs)
 async function downloadFromUrl(url: string): Promise<Uint8Array> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -56,17 +70,27 @@ serve(async (req) => {
   try {
     const requestData: ProcessRequest = await req.json();
 
-    console.log('Processing PDF from URLs...');
+    // Initialize Supabase client with service role key (bypasses RLS)
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
+
+    console.log('Processing PDF from storage...');
     console.log('Request received:', {
-      pdfUrl: requestData.pdfUrl,
-      hasEdgeUrls: !!requestData.edgeUrls,
+      pdfPath: requestData.pdfPath,
+      hasEdgePaths: !!requestData.edgePaths,
       edgeType: requestData.edgeType,
       numPages: requestData.numPages,
       outputPath: requestData.outputPath
     });
 
-    // Download PDF from URL
-    const pdfBytes = await downloadFromUrl(requestData.pdfUrl);
+    // Download PDF from storage
+    const pdfBytes = await downloadFromStorage(supabase, 'pdfs', requestData.pdfPath);
     console.log('PDF downloaded:', pdfBytes.length, 'bytes');
 
     // Load the PDF
@@ -110,22 +134,22 @@ serve(async (req) => {
     newPdfDoc.setCreationDate(new Date());
     newPdfDoc.setModificationDate(new Date());
 
-    // Download edge images
+    // Download edge images from storage
     const edgeImages: Record<string, Uint8Array> = {};
 
-    if (requestData.edgeUrls.side) {
-      console.log('Downloading side edge image...');
-      edgeImages.side = await downloadFromUrl(requestData.edgeUrls.side);
+    if (requestData.edgePaths.side) {
+      console.log('Downloading side edge image from storage...');
+      edgeImages.side = await downloadFromStorage(supabase, 'edge-images', requestData.edgePaths.side);
     }
 
-    if (requestData.edgeUrls.top) {
-      console.log('Downloading top edge image...');
-      edgeImages.top = await downloadFromUrl(requestData.edgeUrls.top);
+    if (requestData.edgePaths.top) {
+      console.log('Downloading top edge image from storage...');
+      edgeImages.top = await downloadFromStorage(supabase, 'edge-images', requestData.edgePaths.top);
     }
 
-    if (requestData.edgeUrls.bottom) {
-      console.log('Downloading bottom edge image...');
-      edgeImages.bottom = await downloadFromUrl(requestData.edgeUrls.bottom);
+    if (requestData.edgePaths.bottom) {
+      console.log('Downloading bottom edge image from storage...');
+      edgeImages.bottom = await downloadFromStorage(supabase, 'edge-images', requestData.edgePaths.bottom);
     }
 
     // Cache for embedded images
@@ -325,16 +349,6 @@ serve(async (req) => {
 
     console.log('PDF saved successfully, size:', processedPdfBytes.length, 'bytes');
 
-    // Initialize Supabase client with service role key (bypasses RLS)
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    });
-
     // Upload processed PDF to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('processed-pdfs')
@@ -356,16 +370,14 @@ serve(async (req) => {
       });
     }
 
-    // Get public URL of processed PDF
-    const { data: urlData } = supabase.storage
-      .from('processed-pdfs')
-      .getPublicUrl(requestData.outputPath);
+    // Construct proper public URL for client access
+    const publicUrl = `${supabaseUrl}/storage/v1/object/public/processed-pdfs/${requestData.outputPath}`;
 
-    console.log('Processed PDF uploaded:', urlData.publicUrl);
+    console.log('Processed PDF uploaded:', publicUrl);
 
     return new Response(JSON.stringify({
       success: true,
-      processedPdfUrl: urlData.publicUrl
+      processedPdfUrl: publicUrl
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
