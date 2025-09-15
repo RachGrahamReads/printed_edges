@@ -24,48 +24,7 @@ export async function processPDFWithSupabase(
     edgeType: 'side-only' | 'all-edges';
   }
 ) {
-  // Check if running on localhost
-  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-  if (isLocalhost) {
-    // For local testing, continue using the test server
-    const pdfBase64 = await fileToBase64(pdfFile);
-    const edgeImages: any = {};
-
-    if (edgeFiles.side) {
-      edgeImages.side = { base64: await fileToBase64(edgeFiles.side) };
-    }
-    if (edgeFiles.top) {
-      edgeImages.top = { base64: await fileToBase64(edgeFiles.top) };
-    }
-    if (edgeFiles.bottom) {
-      edgeImages.bottom = { base64: await fileToBase64(edgeFiles.bottom) };
-    }
-
-    const response = await fetch('http://localhost:8888', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        pdfBase64,
-        edgeImages,
-        numPages: options.numPages,
-        pageType: options.pageType,
-        bleedType: options.bleedType,
-        edgeType: options.edgeType,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    return await response.arrayBuffer();
-  }
-
-  // Production: Direct client-side upload to Supabase Storage (public buckets)
+  // Always use Supabase for PDF processing
   if (!supabase) {
     throw new Error('Supabase client not initialized');
   }
@@ -189,16 +148,3 @@ export async function processPDFWithSupabase(
   }
 }
 
-async function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-      const base64 = reader.result as string;
-      // Remove the data:*/*;base64, prefix
-      const base64Data = base64.split(',')[1];
-      resolve(base64Data);
-    };
-    reader.onerror = error => reject(error);
-  });
-}
