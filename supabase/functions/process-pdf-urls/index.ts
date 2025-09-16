@@ -266,12 +266,12 @@ serve(async (req) => {
             }
 
             if (flipHorizontally) {
+              // Flip horizontally by using negative width and adjusting x position
               newPage.drawImage(topImageCache[cacheKey], {
-                x: 0,
+                x: newWidth,
                 y: newHeight - edgeStripHeight,
-                width: newWidth,
+                width: -newWidth,
                 height: edgeStripHeight,
-                transform: [-1, 0, 0, 1, newWidth, newHeight - edgeStripHeight]
               });
             } else {
               newPage.drawImage(topImageCache[cacheKey], {
@@ -306,12 +306,12 @@ serve(async (req) => {
             }
 
             if (flipHorizontally) {
+              // Flip horizontally by using negative width and adjusting x position
               newPage.drawImage(bottomImageCache[cacheKey], {
-                x: 0,
+                x: newWidth,
                 y: 0,
-                width: newWidth,
+                width: -newWidth,
                 height: edgeStripHeight,
-                transform: [-1, 0, 0, 1, newWidth, 0]
               });
             } else {
               newPage.drawImage(bottomImageCache[cacheKey], {

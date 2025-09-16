@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: python-pdf-service
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python3 test_app.py
-    envVars:
-      - key: PYTHON_ENV
-        value: production
