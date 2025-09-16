@@ -22,6 +22,8 @@ export async function processPDFWithSupabase(
     pageType: string;
     bleedType: 'add_bleed' | 'existing_bleed';
     edgeType: 'side-only' | 'all-edges';
+    trimWidth?: number;
+    trimHeight?: number;
   }
 ) {
   // Always use Supabase for PDF processing
@@ -89,8 +91,14 @@ export async function processPDFWithSupabase(
       edgePaths.bottom = bottomPath;
     }
 
+    // Use appropriate function based on PDF size
+    const useLargeProcessing = options.numPages > 50;
+    const functionName = useLargeProcessing ? 'process-large-pdf' : 'process-pdf-urls';
+
+    console.log(`Processing ${options.numPages} pages using ${functionName}`);
+
     // Call Supabase Edge Function with storage paths
-    const { data, error } = await supabase.functions.invoke('process-pdf-urls', {
+    const { data, error } = await supabase.functions.invoke(functionName, {
       body: {
         pdfPath: pdfPath,
         edgePaths,

@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import JSZip from 'jszip';
 import { processPDFWithSupabase } from '@/lib/supabase';
+import { processPDFWithSlicing } from '@/lib/process-with-slicing';
+import { processPDFWithChunking } from '@/lib/process-with-chunking';
 
 export default function Home() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -27,6 +29,7 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<"2page" | "shelf" | "actual">("2page");
   const [processedPdfUrl, setProcessedPdfUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [pdfDocument, setPdfDocument] = useState<any>(null);
@@ -217,16 +220,39 @@ export default function Home() {
         if (bottomEdgeImageFile) edgeFiles.bottom = bottomEdgeImageFile;
       }
 
-      const result = await processPDFWithSupabase(
-        selectedPdf,
-        edgeFiles,
-        {
-          numPages: totalPages,
-          pageType,
-          bleedType: bleedType as 'add_bleed' | 'existing_bleed',
-          edgeType
-        }
-      );
+      // Choose processing method based on PDF size
+      let result;
+      if (totalPages > 50) {
+        // Use chunking for large PDFs
+        setProcessingProgress(0);
+        result = await processPDFWithChunking(
+          selectedPdf,
+          edgeFiles,
+          {
+            numPages: totalPages,
+            pageType,
+            bleedType: bleedType as 'add_bleed' | 'existing_bleed',
+            edgeType,
+            trimWidth: bookWidth,
+            trimHeight: bookHeight
+          },
+          (progress) => setProcessingProgress(progress)
+        );
+      } else {
+        // Use direct slicing for smaller PDFs
+        result = await processPDFWithSlicing(
+          selectedPdf,
+          edgeFiles,
+          {
+            numPages: totalPages,
+            pageType,
+            bleedType: bleedType as 'add_bleed' | 'existing_bleed',
+            edgeType,
+            trimWidth: bookWidth,
+            trimHeight: bookHeight
+          }
+        );
+      }
 
       // Convert the result to a data URL for download
       const blob = new Blob([result], { type: 'application/pdf' });
@@ -760,6 +786,19 @@ Calculations:
                   >
                     {isProcessing ? "Processing..." : useCustomDimensions ? "🔄 Upload PDF & Image to Process" : "🔄 Process PDF"}
                   </Button>
+
+                  {/* Progress bar for large PDFs */}
+                  {isProcessing && totalPages > 50 && (
+                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                      <div
+                        className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                        style={{ width: `${processingProgress}%` }}
+                      ></div>
+                      <p className="text-xs text-gray-600 mt-1 text-center">
+                        Processing chunks: {Math.round(processingProgress)}%
+                      </p>
+                    </div>
+                  )}
                   
                   {/* Download section */}
                   {processedPdfUrl && (
