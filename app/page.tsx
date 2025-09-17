@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,9 @@ export default function Home() {
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [selectedPdf, setSelectedPdf] = useState<File | null>(null);
   const [edgeType, setEdgeType] = useState<"side-only" | "all-edges">("side-only");
+  const [scaleMode, setScaleMode] = useState<'stretch' | 'fit' | 'fill' | 'none'>('fill');
+  const [showScaleModeInfo, setShowScaleModeInfo] = useState(false);
+  const scaleModeInfoRef = useRef<HTMLDivElement>(null);
   const [topEdgeImage, setTopEdgeImage] = useState<string | null>(null);
   const [topEdgeImageFile, setTopEdgeImageFile] = useState<File | null>(null);
   const [bottomEdgeImage, setBottomEdgeImage] = useState<string | null>(null);
@@ -190,6 +193,20 @@ export default function Home() {
     }
   }, [currentPage, pdfDocument, totalPages, pdfPages, loadMorePages]);
 
+  // Close scale mode info when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (scaleModeInfoRef.current && !scaleModeInfoRef.current.contains(event.target as Node)) {
+        setShowScaleModeInfo(false);
+      }
+    }
+
+    if (showScaleModeInfo) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showScaleModeInfo]);
+
   const processActualPdf = async () => {
     if (!selectedPdf) return;
 
@@ -234,7 +251,8 @@ export default function Home() {
             bleedType: bleedType as 'add_bleed' | 'existing_bleed',
             edgeType,
             trimWidth: bookWidth,
-            trimHeight: bookHeight
+            trimHeight: bookHeight,
+            scaleMode
           },
           (progress) => setProcessingProgress(progress)
         );
@@ -249,7 +267,8 @@ export default function Home() {
             bleedType: bleedType as 'add_bleed' | 'existing_bleed',
             edgeType,
             trimWidth: bookWidth,
-            trimHeight: bookHeight
+            trimHeight: bookHeight,
+            scaleMode
           }
         );
       }
@@ -269,6 +288,120 @@ export default function Home() {
   const generatePreview = () => {
     setShowPreview(true);
     setViewMode("2page"); // Default to 2-page layout
+  };
+
+  // Helper function to calculate background styles based on scale mode
+  // This simulates the 1px slicing behavior - each LEAF gets a 1px slice from the image
+  const getEdgeBackgroundStyle = (
+    edgeType: 'side' | 'top' | 'bottom',
+    imageUrl: string,
+    pageIndex: number,
+    stripWidth: number,
+    stripHeight: number
+  ) => {
+    // For 1px slicing: we extract a 1px slice based on leaf position
+    // and then tile/stretch it according to the scale mode
+
+    const baseStyles: React.CSSProperties = {};
+
+    // Calculate which leaf this page belongs to (2 pages per leaf)
+    const leafIndex = Math.floor(pageIndex / 2);
+
+    // The image should be sized to match our requirements
+    const expectedImageWidth = edgeType === 'side' ?
+      numLeaves : // For side edges, width should be numLeaves pixels (1px per leaf)
+      ((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300); // For top/bottom
+
+    const expectedImageHeight = edgeType === 'side' ?
+      ((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300) : // For side edges
+      numLeaves; // For top/bottom edges, height should be numLeaves pixels (1px per leaf)
+
+    // All scale modes still use 1px slicing, but differ in how they display that pixel
+    if (edgeType === 'side') {
+      // For side edges: extract a 1px vertical slice and tile it horizontally
+
+      // Create a CSS gradient to simulate the 1px slice being repeated
+      // We'll use background-size and position to extract just the 1px slice
+      baseStyles.backgroundImage = `url(${imageUrl})`;
+
+      switch (scaleMode) {
+        case 'fill':
+          // Tile the 1px slice across the entire width (default behavior)
+          // Scale the image so each leaf gets exactly stripWidth pixels
+          baseStyles.backgroundSize = `${numLeaves * stripWidth}px 100%`;
+          baseStyles.backgroundPosition = `${-(leafIndex * stripWidth)}px center`;
+          baseStyles.backgroundRepeat = 'repeat-x';
+          // Don't set backgroundColor - let page background show through
+          break;
+
+        case 'stretch':
+          // Stretch the 1px slice to fill the entire strip
+          baseStyles.backgroundSize = `${numLeaves * stripWidth}px 100%`;
+          baseStyles.backgroundPosition = `${-(leafIndex * stripWidth)}px center`;
+          baseStyles.backgroundRepeat = 'no-repeat';
+          // Don't set backgroundColor - let page background show through
+          break;
+
+        case 'fit':
+          // Show the 1px slice at its natural height, centered
+          const naturalHeight = expectedImageHeight;
+          const scaleRatio = Math.min(stripHeight / naturalHeight, 1);
+          baseStyles.backgroundSize = `${numLeaves * stripWidth}px ${naturalHeight * scaleRatio}px`;
+          baseStyles.backgroundPosition = `${-(leafIndex * stripWidth)}px center`;
+          baseStyles.backgroundRepeat = 'repeat-x';
+          // Don't set backgroundColor - let page background show through
+          break;
+
+        case 'none':
+          // Show the 1px slice at actual size
+          baseStyles.backgroundSize = `${numLeaves * stripWidth}px ${expectedImageHeight}px`;
+          baseStyles.backgroundPosition = `${-(leafIndex * stripWidth)}px center`;
+          baseStyles.backgroundRepeat = 'repeat-x';
+          // Don't set backgroundColor - let page background show through
+          break;
+      }
+    } else {
+      // For top/bottom edges: extract a 1px horizontal slice and tile it vertically
+      baseStyles.backgroundImage = `url(${imageUrl})`;
+
+      switch (scaleMode) {
+        case 'fill':
+          // Tile the 1px slice across the entire height (default behavior)
+          baseStyles.backgroundSize = `100% ${numLeaves * stripHeight}px`;
+          baseStyles.backgroundPosition = `center ${-(leafIndex * stripHeight)}px`;
+          baseStyles.backgroundRepeat = 'repeat-y';
+          // Don't set backgroundColor - let page background show through
+          break;
+
+        case 'stretch':
+          // Stretch the 1px slice to fill the entire strip
+          baseStyles.backgroundSize = `100% ${numLeaves * stripHeight}px`;
+          baseStyles.backgroundPosition = `center ${-(leafIndex * stripHeight)}px`;
+          baseStyles.backgroundRepeat = 'no-repeat';
+          // Don't set backgroundColor - let page background show through
+          break;
+
+        case 'fit':
+          // Show the 1px slice at its natural width, centered
+          const naturalWidth = expectedImageWidth;
+          const scaleRatio = Math.min(stripWidth / naturalWidth, 1);
+          baseStyles.backgroundSize = `${naturalWidth * scaleRatio}px ${numLeaves * stripHeight}px`;
+          baseStyles.backgroundPosition = `center ${-(leafIndex * stripHeight)}px`;
+          baseStyles.backgroundRepeat = 'repeat-y';
+          // Don't set backgroundColor - let page background show through
+          break;
+
+        case 'none':
+          // Show the 1px slice at actual size
+          baseStyles.backgroundSize = `${expectedImageWidth}px ${numLeaves * stripHeight}px`;
+          baseStyles.backgroundPosition = `center ${-(leafIndex * stripHeight)}px`;
+          baseStyles.backgroundRepeat = 'repeat-y';
+          // Don't set backgroundColor - let page background show through
+          break;
+      }
+    }
+
+    return baseStyles;
   };
 
   const createTemplate = (width: number, height: number, edgeType: string, rotate: boolean = false) => {
@@ -611,6 +744,72 @@ The bleed and buffer areas ensure proper coverage during printing and cutting.
                       <option value="premium">Premium Color</option>
                     </select>
                   </div>
+
+                  <div className="relative">
+                    <div className="flex items-center space-x-2">
+                      <Label htmlFor="scaleMode" className="text-sm">Edge Image Scaling</Label>
+                      <button
+                        type="button"
+                        onClick={() => setShowScaleModeInfo(!showScaleModeInfo)}
+                        className="w-4 h-4 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center hover:bg-blue-600"
+                        title="Click for scaling mode information"
+                      >
+                        ?
+                      </button>
+                    </div>
+                    <select
+                      id="scaleMode"
+                      value={scaleMode}
+                      onChange={(e) => setScaleMode(e.target.value as 'stretch' | 'fit' | 'fill' | 'none')}
+                      className="w-full px-3 py-1 text-sm border border-gray-300 rounded-md"
+                    >
+                      <option value="fill">Fill (recommended) - Crop to fit perfectly</option>
+                      <option value="stretch">Stretch - Use entire image, may distort</option>
+                      <option value="fit">Fit - Show entire image, may have gaps</option>
+                      <option value="none">None - Use image as-is</option>
+                    </select>
+
+                    {/* Information popup */}
+                    {showScaleModeInfo && (
+                      <div
+                        ref={scaleModeInfoRef}
+                        className="absolute top-full left-0 mt-2 p-4 bg-white border border-gray-300 rounded-lg shadow-lg z-10 w-80"
+                      >
+                        <div className="space-y-3">
+                          <div className="border-b pb-2">
+                            <h4 className="font-semibold text-sm">Edge Image Scaling Modes</h4>
+                          </div>
+
+                          <div>
+                            <p className="font-medium text-xs text-green-700">✨ Fill (Recommended)</p>
+                            <p className="text-xs text-gray-600">Scales your image to perfectly fit the required dimensions. May crop parts of the image but ensures optimal coverage.</p>
+                          </div>
+
+                          <div>
+                            <p className="font-medium text-xs text-blue-700">🔄 Stretch</p>
+                            <p className="text-xs text-gray-600">Uses your entire image but may distort proportions to fit the exact dimensions needed.</p>
+                          </div>
+
+                          <div>
+                            <p className="font-medium text-xs text-purple-700">📐 Fit</p>
+                            <p className="text-xs text-gray-600">Shows your entire image without cropping, but may leave gaps if proportions don't match.</p>
+                          </div>
+
+                          <div>
+                            <p className="font-medium text-xs text-gray-700">🎯 None</p>
+                            <p className="text-xs text-gray-600">Uses your image at original size with no scaling - best for images already sized correctly.</p>
+                          </div>
+
+                          <button
+                            onClick={() => setShowScaleModeInfo(false)}
+                            className="w-full mt-2 px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                          >
+                            Got it!
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -622,13 +821,13 @@ The bleed and buffer areas ensure proper coverage during printing and cutting.
                       <p className="font-medium text-sm">Required Image Sizes:</p>
                       {edgeType === "side-only" ? (
                         <p className="text-lg font-medium text-blue-700">
-                          Side: {(totalThickness * 300).toFixed(0)} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)}px
+                          Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)}px minimum
                         </p>
                       ) : (
                         <div className="text-sm text-blue-700 space-y-1">
-                          <p>Top: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × {(totalThickness * 300).toFixed(0)}px</p>
-                          <p>Side: {(totalThickness * 300).toFixed(0)} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)}px</p>
-                          <p>Bottom: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × {(totalThickness * 300).toFixed(0)}px</p>
+                          <p>Top: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × {numLeaves}px minimum</p>
+                          <p>Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)}px minimum</p>
+                          <p>Bottom: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × {numLeaves}px minimum</p>
                         </div>
                       )}
                     </div>
@@ -795,7 +994,7 @@ Calculations:
                         style={{ width: `${processingProgress}%` }}
                       ></div>
                       <p className="text-xs text-gray-600 mt-1 text-center">
-                        Processing chunks: {Math.round(processingProgress)}%
+                        Processing PDF: {Math.round(processingProgress)}%
                       </p>
                     </div>
                   )}
@@ -933,53 +1132,74 @@ Calculations:
                           </div>
 
                           {/* Left Edge Strip (only if not first page) */}
-                          {currentPage > 1 && (
+                          {currentPage > 1 && selectedImage && (
                             <div
                               className="absolute top-0"
                               style={{
                                 left: `${Math.max(0.125 * 50, 6)}px`, // Position it to overlay the left page, not outside
                                 width: `${Math.max(0.125 * 50, 6)}px`,
                                 height: "100%",
-                                backgroundImage: `url(${selectedImage})`,
-                                backgroundSize: `${totalPages * Math.max(0.125 * 50, 6)}px 100%`, // Size image so each page slice fills the strip width
-                                backgroundPosition: `${-(((currentPage-1) - 1) * Math.max(0.125 * 50, 6))}px center`, // Show slice for left page, stretched
-                                backgroundRepeat: "no-repeat",
+                                ...getEdgeBackgroundStyle(
+                                  'side',
+                                  selectedImage,
+                                  (currentPage - 1) - 1, // Left page index
+                                  Math.max(0.125 * 50, 6),
+                                  Math.min(bookHeight * 25, 280)
+                                ),
                                 transform: "scaleX(-1) skewY(2deg)",
                                 transformOrigin: "left center",
+                                // Always miter corners in all-edges mode
+                                clipPath: edgeType === "all-edges" ?
+                                  `polygon(0 ${Math.max(0.125 * 50, 6)}px, 100% 0, 100% 100%, 0 calc(100% - ${Math.max(0.125 * 50, 6)}px))` : // Miter both corners
+                                  'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners for side-only mode
                               }}
                             />
                           )}
 
                           {/* Top Edge Strip for Left Page (only if top edge image is uploaded) */}
-                          {edgeType === "all-edges" && topEdgeImage && (
+                          {edgeType === "all-edges" && topEdgeImage && currentPage > 1 && selectedImage && (
                             <div
                               className="absolute top-0 left-0 w-full border-t border-gray-400"
                               style={{
                                 height: `${Math.max(0.125 * 50, 6)}px`,
-                                backgroundImage: `url(${topEdgeImage})`,
-                                backgroundSize: `100% ${totalPages * Math.max(0.125 * 50, 6)}px`, // Size image so each page slice fills the strip height
-                                backgroundPosition: `center ${-(((currentPage-1) - 1) * Math.max(0.125 * 50, 6))}px`, // Show slice for left page, stretched
-                                backgroundRepeat: "no-repeat",
+                                ...getEdgeBackgroundStyle(
+                                  'top',
+                                  topEdgeImage,
+                                  (currentPage - 1) - 1, // Left page index
+                                  Math.min(bookWidth * 25, 200),
+                                  Math.max(0.125 * 50, 6)
+                                ),
                                 transform: "scaleX(-1) skewX(1deg)", // Mirror horizontally for left page
                                 transformOrigin: "center top",
                                 zIndex: 10,
+                                // Always miter the outer corner in all-edges mode
+                                clipPath: edgeType === "all-edges" ?
+                                  `polygon(0 0, 100% 0, calc(100% - ${Math.max(0.125 * 50, 6)}px) 100%, 0 100%)` : // Miter outer corner
+                                  'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners for side-only mode
                               }}
                             />
                           )}
 
                           {/* Bottom Edge Strip for Left Page (only if bottom edge image is uploaded) */}
-                          {edgeType === "all-edges" && bottomEdgeImage && (
+                          {edgeType === "all-edges" && bottomEdgeImage && currentPage > 1 && selectedImage && (
                             <div
                               className="absolute bottom-0 left-0 w-full border-b border-gray-400"
                               style={{
                                 height: `${Math.max(0.125 * 50, 6)}px`,
-                                backgroundImage: `url(${bottomEdgeImage})`,
-                                backgroundSize: `100% ${totalPages * Math.max(0.125 * 50, 6)}px`, // Size image so each page slice fills the strip height
-                                backgroundPosition: `center ${-(((currentPage-1) - 1) * Math.max(0.125 * 50, 6))}px`, // Show slice for left page, stretched
-                                backgroundRepeat: "no-repeat",
+                                ...getEdgeBackgroundStyle(
+                                  'bottom',
+                                  bottomEdgeImage,
+                                  (currentPage - 1) - 1, // Left page index
+                                  Math.min(bookWidth * 25, 200),
+                                  Math.max(0.125 * 50, 6)
+                                ),
                                 transform: "scaleX(-1) skewX(-1deg)", // Mirror horizontally for left page
                                 transformOrigin: "center bottom",
                                 zIndex: 10,
+                                // Always miter the outer corner in all-edges mode
+                                clipPath: edgeType === "all-edges" ?
+                                  `polygon(0 0, calc(100% - ${Math.max(0.125 * 50, 6)}px) 0, 100% 100%, 0 100%)` : // Miter outer corner
+                                  'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners for side-only mode
                               }}
                             />
                           )}
@@ -1039,12 +1259,19 @@ Calculations:
                             className="absolute top-0 right-0 h-full border-r border-gray-400"
                             style={{
                               width: `${Math.max(0.125 * 50, 6)}px`,
-                              backgroundImage: `url(${selectedImage})`,
-                              backgroundSize: `${totalPages * Math.max(0.125 * 50, 6)}px 100%`, // Size image so each page slice fills the strip width
-                              backgroundPosition: `${-((currentPage - 1) * Math.max(0.125 * 50, 6))}px center`, // Show slice for right page, stretched
-                              backgroundRepeat: "no-repeat",
+                              ...(selectedImage ? getEdgeBackgroundStyle(
+                                'side',
+                                selectedImage,
+                                currentPage - 1, // Right page index
+                                Math.max(0.125 * 50, 6),
+                                Math.min(bookHeight * 25, 280)
+                              ) : {}),
                               transform: "skewY(-2deg)",
                               transformOrigin: "right center",
+                              // Miter corners when top/bottom edges exist - only trim the actual corners
+                              clipPath: edgeType === "all-edges" && (topEdgeImage || bottomEdgeImage) ?
+                                `polygon(0 ${Math.max(0.125 * 50, 6)}px, 100% 0, 100% 100%, 0 calc(100% - ${Math.max(0.125 * 50, 6)}px))` : // 45-degree corner cuts - only bottom corner
+                                'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners
                             }}
                           />
 
@@ -1054,13 +1281,20 @@ Calculations:
                               className="absolute top-0 left-0 w-full border-t border-gray-400"
                               style={{
                                 height: `${Math.max(0.125 * 50, 6)}px`,
-                                backgroundImage: `url(${topEdgeImage})`,
-                                backgroundSize: `100% ${totalPages * Math.max(0.125 * 50, 6)}px`, // Size image so each page slice fills the strip height
-                                backgroundPosition: `center ${-((currentPage - 1) * Math.max(0.125 * 50, 6))}px`, // Show slice for right page
-                                backgroundRepeat: "no-repeat",
+                                ...getEdgeBackgroundStyle(
+                                  'top',
+                                  topEdgeImage,
+                                  currentPage - 1, // Right page index
+                                  Math.min(bookWidth * 25, 200),
+                                  Math.max(0.125 * 50, 6)
+                                ),
                                 transform: "skewX(1deg)",
                                 transformOrigin: "center top",
                                 zIndex: 10,
+                                // Always miter the outer corner in all-edges mode
+                                clipPath: edgeType === "all-edges" ?
+                                  `polygon(0 0, 100% 0, calc(100% - ${Math.max(0.125 * 50, 6)}px) 100%, 0 100%)` : // Miter outer corner (top-right)
+                                  'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners for side-only mode
                               }}
                             />
                           )}
@@ -1071,13 +1305,20 @@ Calculations:
                               className="absolute bottom-0 left-0 w-full border-b border-gray-400"
                               style={{
                                 height: `${Math.max(0.125 * 50, 6)}px`,
-                                backgroundImage: `url(${bottomEdgeImage})`,
-                                backgroundSize: `100% ${totalPages * Math.max(0.125 * 50, 6)}px`, // Size image so each page slice fills the strip height
-                                backgroundPosition: `center ${-((currentPage - 1) * Math.max(0.125 * 50, 6))}px`, // Show slice for right page
-                                backgroundRepeat: "no-repeat",
+                                ...getEdgeBackgroundStyle(
+                                  'bottom',
+                                  bottomEdgeImage,
+                                  currentPage - 1, // Right page index
+                                  Math.min(bookWidth * 25, 200),
+                                  Math.max(0.125 * 50, 6)
+                                ),
                                 transform: "skewX(-1deg)",
                                 transformOrigin: "center bottom",
                                 zIndex: 10,
+                                // Miter the right corner where it meets the side edge
+                                clipPath: selectedImage ?
+                                  `polygon(0 0, calc(100% - ${Math.max(0.125 * 50, 6)}px) 0, 100% 100%, 0 100%)` : // Side edge exists, miter right corner
+                                  'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // No side edge, square corners
                               }}
                             />
                           )}
