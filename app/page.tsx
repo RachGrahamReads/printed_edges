@@ -7,16 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import JSZip from 'jszip';
-import { processPDFWithSupabase } from '@/lib/supabase';
-import { processPDFWithSlicing } from '@/lib/process-with-slicing';
 import { processPDFWithChunking } from '@/lib/process-with-chunking';
 
 export default function Home() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [selectedPdf, setSelectedPdf] = useState<File | null>(null);
-  const [edgeType, setEdgeType] = useState<"side-only" | "all-edges">("side-only");
+  const edgeType = "all-edges"; // Always use all-edges mode with mitred corners
   const [scaleMode, setScaleMode] = useState<'stretch' | 'fit' | 'fill' | 'none'>('fill');
   const [showScaleModeInfo, setShowScaleModeInfo] = useState(false);
   const scaleModeInfoRef = useRef<HTMLDivElement>(null);
@@ -26,7 +23,6 @@ export default function Home() {
   const [bottomEdgeImageFile, setBottomEdgeImageFile] = useState<File | null>(null);
   const [bookWidth, setBookWidth] = useState(6); // inches (auto-detected)
   const [bookHeight, setBookHeight] = useState(9); // inches (auto-detected)
-  const [pageType, setPageType] = useState("bw");
   const [bleedType, setBleedType] = useState("add_bleed"); // "add_bleed" or "existing_bleed"
   const [showPreview, setShowPreview] = useState(false);
   const [viewMode, setViewMode] = useState<"2page" | "shelf" | "actual">("2page");
@@ -39,14 +35,7 @@ export default function Home() {
   const [pdfPages, setPdfPages] = useState<string[]>([]);
   const [useCustomDimensions, setUseCustomDimensions] = useState(false);
 
-  const PAGE_THICKNESS = {
-    "bw": 0.0032,
-    "standard": 0.0032,
-    "premium": 0.0037
-  };
-
   const numLeaves = Math.ceil(totalPages / 2);
-  const totalThickness = PAGE_THICKNESS[pageType as keyof typeof PAGE_THICKNESS] * numLeaves;
 
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -210,68 +199,37 @@ export default function Home() {
   const processActualPdf = async () => {
     if (!selectedPdf) return;
 
-    // Validate edge files based on edge type
-    if (edgeType === 'side-only' && !selectedImageFile) {
-      alert('Please upload a side edge image');
-      return;
-    }
-    if (edgeType === 'all-edges' && (!topEdgeImageFile && !selectedImageFile && !bottomEdgeImageFile)) {
+    // Validate that at least one edge image is uploaded
+    if (!topEdgeImageFile && !selectedImageFile && !bottomEdgeImageFile) {
       alert('Please upload at least one edge image (top, side, or bottom)');
       return;
     }
 
     setIsProcessing(true);
     try {
-      // Check if we should use Supabase (when NEXT_PUBLIC_SUPABASE_URL is set)
-      const useSupabase = typeof window !== 'undefined' &&
-        process.env.NEXT_PUBLIC_SUPABASE_URL &&
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      // Using Supabase for processing (production setup)
 
-      // Use Vercel Python API route
+      // Prepare edge files (always all-edges mode)
       const edgeFiles: any = {};
-      if (edgeType === 'side-only') {
-        edgeFiles.side = selectedImageFile;
-      } else {
-        if (topEdgeImageFile) edgeFiles.top = topEdgeImageFile;
-        if (selectedImageFile) edgeFiles.side = selectedImageFile;
-        if (bottomEdgeImageFile) edgeFiles.bottom = bottomEdgeImageFile;
-      }
+      if (topEdgeImageFile) edgeFiles.top = topEdgeImageFile;
+      if (selectedImageFile) edgeFiles.side = selectedImageFile;
+      if (bottomEdgeImageFile) edgeFiles.bottom = bottomEdgeImageFile;
 
-      // Choose processing method based on PDF size
-      let result;
-      if (totalPages > 50) {
-        // Use chunking for large PDFs
-        setProcessingProgress(0);
-        result = await processPDFWithChunking(
-          selectedPdf,
-          edgeFiles,
-          {
-            numPages: totalPages,
-            pageType,
-            bleedType: bleedType as 'add_bleed' | 'existing_bleed',
-            edgeType,
-            trimWidth: bookWidth,
-            trimHeight: bookHeight,
-            scaleMode
-          },
-          (progress) => setProcessingProgress(progress)
-        );
-      } else {
-        // Use direct slicing for smaller PDFs
-        result = await processPDFWithSlicing(
-          selectedPdf,
-          edgeFiles,
-          {
-            numPages: totalPages,
-            pageType,
-            bleedType: bleedType as 'add_bleed' | 'existing_bleed',
-            edgeType,
-            trimWidth: bookWidth,
-            trimHeight: bookHeight,
-            scaleMode
-          }
-        );
-      }
+      // Use chunking workflow for all PDFs (now with storage-based slicing)
+      const result = await processPDFWithChunking(
+        selectedPdf,
+        edgeFiles,
+        {
+          numPages: totalPages,
+          pageType: 'standard', // Fixed value since we no longer use page type calculations
+          bleedType: bleedType as 'add_bleed' | 'existing_bleed',
+          edgeType,
+          trimWidth: bookWidth,
+          trimHeight: bookHeight,
+          scaleMode
+        },
+        (progress) => setProcessingProgress(progress)
+      );
 
       // Convert the result to a data URL for download
       const blob = new Blob([result], { type: 'application/pdf' });
@@ -404,174 +362,10 @@ export default function Home() {
     return baseStyles;
   };
 
-  const createTemplate = (width: number, height: number, edgeType: string, rotate: boolean = false) => {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    canvas.width = width;
-    canvas.height = height;
-
-    // Fill with light background
-    ctx.fillStyle = '#f8f9fa';
-    ctx.fillRect(0, 0, width, height);
-
-    // Calculate zones
-    const bleedMargin = 0.125 * 300; // 0.125" in pixels at 300 DPI
-    const bufferMargin = 0.125 * 300; // Additional 0.125" buffer zone
-    
-    // Draw bleed zones (50% transparent red)
-    ctx.fillStyle = 'rgba(220, 53, 69, 0.5)';
-    if (edgeType === 'side') {
-      // For side edge: bleed on top and bottom
-      ctx.fillRect(0, 0, width, bleedMargin);
-      ctx.fillRect(0, height - bleedMargin, width, bleedMargin);
-    } else {
-      // For top/bottom edge: bleed on left and right
-      ctx.fillRect(0, 0, bleedMargin, height);
-      ctx.fillRect(width - bleedMargin, 0, bleedMargin, height);
-    }
-    
-    // Draw buffer zones (50% transparent blue)
-    ctx.fillStyle = 'rgba(0, 123, 255, 0.5)';
-    if (edgeType === 'side') {
-      ctx.fillRect(0, bleedMargin, width, bufferMargin);
-      ctx.fillRect(0, height - bleedMargin - bufferMargin, width, bufferMargin);
-    } else {
-      ctx.fillRect(bleedMargin, 0, bufferMargin, height);
-      ctx.fillRect(width - bleedMargin - bufferMargin, 0, bufferMargin, height);
-    }
-    
-    // Draw main design area (safe zone) border
-    ctx.strokeStyle = '#28a745';
-    ctx.setLineDash([]);
-    ctx.lineWidth = 2;
-    if (edgeType === 'side') {
-      ctx.strokeRect(0, bleedMargin + bufferMargin, width, height - (2 * (bleedMargin + bufferMargin)));
-    } else {
-      ctx.strokeRect(bleedMargin + bufferMargin, 0, width - (2 * (bleedMargin + bufferMargin)), height);
-    }
-
-    // Add text instructions
-    ctx.save();
-    ctx.translate(width / 2, height / 2);
-    if (rotate) {
-      ctx.rotate(Math.PI / 2); // 90 degrees for side templates
-    }
-    
-    // Calculate font sizes based on template dimensions
-    const maxDimension = Math.max(width, height);
-    const baseFontSize = Math.max(Math.min(maxDimension / 20, 24), 10);
-    const smallFontSize = Math.max(Math.min(maxDimension / 25, 18), 8);
-    const lineSpacing = baseFontSize * 1.2;
-    
-    ctx.fillStyle = '#495057';
-    ctx.font = `${baseFontSize}px Arial, sans-serif`;
-    ctx.textAlign = 'center';
-    
-    const edgeName = edgeType.charAt(0).toUpperCase() + edgeType.slice(1);
-    ctx.fillText(`${edgeName} Edge Template`, 0, -lineSpacing * 2);
-    ctx.fillText(`${width} × ${height}px`, 0, -lineSpacing);
-    ctx.fillText(`${bookWidth}" × ${bookHeight}" • ${totalPages}p`, 0, 0);
-    
-    ctx.font = `${smallFontSize}px Arial, sans-serif`;
-    ctx.fillStyle = '#28a745';
-    ctx.fillText('Safe area (green)', 0, lineSpacing);
-    ctx.fillStyle = '#dc3545';
-    ctx.fillText('Bleed (red)', 0, lineSpacing * 2);
-    ctx.fillStyle = '#007bff';
-    ctx.fillText('Buffer (blue)', 0, lineSpacing * 3);
-    
-    ctx.restore();
-
-    return canvas.toDataURL('image/png');
-  };
 
   const generateTemplate = async () => {
-    const zip = new JSZip();
-    
-    if (edgeType === "side-only") {
-      // Generate only side edge template
-      const sideWidth = totalThickness * 300;
-      const sideHeight = (bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300;
-      const sideTemplate = createTemplate(sideWidth, sideHeight, 'side', true);
-      
-      if (sideTemplate) {
-        // Remove the data:image/png;base64, prefix
-        const base64Data = sideTemplate.split(',')[1];
-        zip.file(`side-edge-${bookWidth}x${bookHeight}-${totalPages}pages.png`, base64Data, {base64: true});
-      }
-    } else {
-      // Generate templates for all edges
-      const sideWidth = totalThickness * 300;
-      const sideHeight = (bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300;
-      const topBottomWidth = (bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300;
-      const topBottomHeight = totalThickness * 300;
-      
-      // Create side template
-      const sideTemplate = createTemplate(sideWidth, sideHeight, 'side', true);
-      if (sideTemplate) {
-        const base64Data = sideTemplate.split(',')[1];
-        zip.file(`side-edge-${bookWidth}x${bookHeight}-${totalPages}pages.png`, base64Data, {base64: true});
-      }
-      
-      // Create top template
-      const topTemplate = createTemplate(topBottomWidth, topBottomHeight, 'top', false);
-      if (topTemplate) {
-        const base64Data = topTemplate.split(',')[1];
-        zip.file(`top-edge-${bookWidth}x${bookHeight}-${totalPages}pages.png`, base64Data, {base64: true});
-      }
-      
-      // Create bottom template
-      const bottomTemplate = createTemplate(topBottomWidth, topBottomHeight, 'bottom', false);
-      if (bottomTemplate) {
-        const base64Data = bottomTemplate.split(',')[1];
-        zip.file(`bottom-edge-${bookWidth}x${bookHeight}-${totalPages}pages.png`, base64Data, {base64: true});
-      }
-    }
-    
-    // Add README file with instructions
-    const readmeContent = `Edge Templates for ${bookWidth}" × ${bookHeight}" Book (${totalPages} pages)
-
-${edgeType === "side-only" ? "Side-only Mode:" : "All-edges Mode:"}
-${edgeType === "side-only" ? 
-  `- side-edge: ${(totalThickness * 300).toFixed(0)} × ${((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)}px` :
-  `- top-edge: ${((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × ${(totalThickness * 300).toFixed(0)}px
-- side-edge: ${(totalThickness * 300).toFixed(0)} × ${((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)}px
-- bottom-edge: ${((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × ${(totalThickness * 300).toFixed(0)}px`}
-
-Book Details:
-- Dimensions: ${bookWidth}" × ${bookHeight}"
-- Pages: ${totalPages} (${numLeaves} leaves)
-- Paper Type: ${pageType === "bw" ? "Black & White" : pageType === "standard" ? "Standard Color" : "Premium Color"}
-- Total Thickness: ${totalThickness.toFixed(4)}"
-- Bleed: ${bleedType === "add_bleed" ? "0.125\" bleed will be added" : "Using existing bleed in PDF"}
-
-Template Color Guide:
-- Green border: Safe design area
-- Red zones: Bleed area (0.125")
-- Blue zones: Buffer area (0.125")
-
-Create your edge designs within the safe area (green) for best results.
-The bleed and buffer areas ensure proper coverage during printing and cutting.
-`;
-    
-    zip.file('README.txt', readmeContent);
-    
-    // Generate and download zip
-    try {
-      const zipBlob = await zip.generateAsync({type: 'blob'});
-      const link = document.createElement('a');
-      link.download = `edge-templates-${bookWidth}x${bookHeight}-${totalPages}pages.zip`;
-      link.href = URL.createObjectURL(zipBlob);
-      link.click();
-      
-      // Clean up object URL
-      setTimeout(() => URL.revokeObjectURL(link.href), 100);
-    } catch (error) {
-      console.error('Error generating zip:', error);
-      alert('Failed to generate template zip file');
-    }
+    // Template generation disabled - no longer using thickness-based calculations
+    alert('Template generation temporarily disabled. Use the image size requirements shown above.');
   };
 
   return (
@@ -685,39 +479,7 @@ The bleed and buffer areas ensure proper coverage during printing and cutting.
                 </div>
               </div>
 
-              {/* Step 2: Edge Type Selection */}
-              {((selectedPdf && totalPages > 0) || (useCustomDimensions && totalPages > 0)) && (
-                <div className="space-y-3">
-                  <Label>2. Choose Edge Type</Label>
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        id="sideOnly"
-                        type="radio"
-                        name="edgeType"
-                        checked={edgeType === "side-only"}
-                        onChange={() => setEdgeType("side-only")}
-                        className="w-4 h-4 text-blue-600"
-                      />
-                      <Label htmlFor="sideOnly" className="text-sm">Side edges only</Label>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <input
-                        id="allEdges"
-                        type="radio"
-                        name="edgeType"
-                        checked={edgeType === "all-edges"}
-                        onChange={() => setEdgeType("all-edges")}
-                        className="w-4 h-4 text-blue-600"
-                      />
-                      <Label htmlFor="allEdges" className="text-sm">All edges (top, side, bottom)</Label>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 3: Options */}
+              {/* Step 2: Options */}
               {((selectedPdf && totalPages > 0) || (useCustomDimensions && totalPages > 0)) && (
                 <div className="space-y-3">
                   <div className="flex items-center space-x-2">
@@ -731,19 +493,6 @@ The bleed and buffer areas ensure proper coverage during printing and cutting.
                     <Label htmlFor="hasBleed" className="text-sm">My document already has bleed</Label>
                   </div>
 
-                  <div>
-                    <Label htmlFor="pageType" className="text-sm">Print Type</Label>
-                    <select
-                      id="pageType"
-                      value={pageType}
-                      onChange={(e) => setPageType(e.target.value)}
-                      className="w-full px-3 py-1 text-sm border border-gray-300 rounded-md"
-                    >
-                      <option value="bw">Black & White</option>
-                      <option value="standard">Standard Color</option>
-                      <option value="premium">Premium Color</option>
-                    </select>
-                  </div>
 
                   <div className="relative">
                     <div className="flex items-center space-x-2">
@@ -813,64 +562,39 @@ The bleed and buffer areas ensure proper coverage during printing and cutting.
                 </div>
               )}
 
-              {/* Step 4: Required Image Size (simplified) */}
+              {/* Step 3: Required Image Size (simplified) */}
               {((selectedPdf && totalPages > 0) || (useCustomDimensions && totalPages > 0)) && (
                 <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium text-sm">Required Image Sizes:</p>
-                      {edgeType === "side-only" ? (
-                        <p className="text-lg font-medium text-blue-700">
-                          Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)}px minimum
-                        </p>
-                      ) : (
-                        <div className="text-sm text-blue-700 space-y-1">
-                          <p>Top: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × {numLeaves}px minimum</p>
-                          <p>Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)}px minimum</p>
-                          <p>Bottom: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × {numLeaves}px minimum</p>
-                        </div>
-                      )}
+                      <div className="text-sm text-blue-700 space-y-1">
+                        <p>Top: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × {numLeaves}px minimum</p>
+                        <p>Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)}px minimum</p>
+                        <p>Bottom: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × {numLeaves}px minimum</p>
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
-                          const details = edgeType === "side-only" ? 
-                            `Required Edge Image Details:
-
-Side Edge Image:
-Width: ${(totalThickness * 300).toFixed(0)} pixels (${totalThickness.toFixed(4)}" at 300 DPI)
-Height: ${((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)} pixels (${(bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight).toFixed(2)}" at 300 DPI)
-
-Your PDF: ${totalPages} pages (${numLeaves} leaves), ${bookWidth}" × ${bookHeight}"
-Paper: ${pageType === "bw" ? "Black & White" : pageType === "standard" ? "Standard Color" : "Premium Color"}
-Bleed: ${bleedType === "add_bleed" ? "Will add 0.125\" bleed" : "Using existing bleed"}
-
-Calculation:
-• Width = ${numLeaves} leaves × ${PAGE_THICKNESS[pageType as keyof typeof PAGE_THICKNESS]}" thickness
-• Height = ${bookHeight}" ${bleedType === "add_bleed" ? "+ 0.25\" (bleed will be added)" : "(using existing bleed)"}` :
-
-                            `Required Edge Image Details:
+                          const details = `Required Edge Image Details:
 
 Top Edge Image:
 Width: ${((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} pixels (${(bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth).toFixed(2)}" at 300 DPI)
-Height: ${(totalThickness * 300).toFixed(0)} pixels (${totalThickness.toFixed(4)}" at 300 DPI)
+Height: ${numLeaves} pixels (1 pixel per leaf)
 
 Side Edge Image:
-Width: ${(totalThickness * 300).toFixed(0)} pixels (${totalThickness.toFixed(4)}" at 300 DPI)
+Width: ${numLeaves} pixels (1 pixel per leaf)
 Height: ${((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)} pixels (${(bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight).toFixed(2)}" at 300 DPI)
 
 Bottom Edge Image:
 Width: ${((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} pixels (${(bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth).toFixed(2)}" at 300 DPI)
-Height: ${(totalThickness * 300).toFixed(0)} pixels (${totalThickness.toFixed(4)}" at 300 DPI)
+Height: ${numLeaves} pixels (1 pixel per leaf)
 
 Your PDF: ${totalPages} pages (${numLeaves} leaves), ${bookWidth}" × ${bookHeight}"
-Paper: ${pageType === "bw" ? "Black & White" : pageType === "standard" ? "Standard Color" : "Premium Color"}
 Bleed: ${bleedType === "add_bleed" ? "Will add 0.125\" bleed" : "Using existing bleed"}
 
-Calculations:
-• Book thickness = ${numLeaves} leaves × ${PAGE_THICKNESS[pageType as keyof typeof PAGE_THICKNESS]}" thickness = ${totalThickness.toFixed(4)}"
-• Top/Bottom width = ${bookWidth}" ${bleedType === "add_bleed" ? "+ 0.25\" (bleed)" : "(existing bleed)"}
-• Side height = ${bookHeight}" ${bleedType === "add_bleed" ? "+ 0.25\" (bleed)" : "(existing bleed)"}`;
+Now using 1 pixel per leaf approach - no paper thickness calculations needed.`;
                           alert(details);
                         }}
                         className="text-xs text-blue-600 hover:text-blue-800 underline"
@@ -889,80 +613,64 @@ Calculations:
               )}
 
 
-              {/* Step 5: Image Upload(s) */}
+              {/* Step 4: Image Upload(s) */}
               {((selectedPdf && totalPages > 0) || (useCustomDimensions && totalPages > 0)) && (
                 <div className="space-y-4">
-                  {edgeType === "side-only" ? (
+                  <div className="space-y-3">
+                    <Label>4. Upload Edge Images (choose which edges you want)</Label>
+
                     <div>
-                      <Label htmlFor="sideImage">5. Upload Side Edge Image</Label>
+                      <Label htmlFor="topImage" className="text-sm">Top Edge Image <span className="text-gray-500">(optional)</span></Label>
                       <Input
-                        id="sideImage"
+                        id="topImage"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleTopEdgeUpload}
+                        className="mt-1"
+                      />
+                      {topEdgeImage && (
+                        <p className="text-xs text-green-600 mt-1">✅ Top edge uploaded</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label htmlFor="sideImageAll" className="text-sm">Side Edge Image <span className="text-gray-500">(optional)</span></Label>
+                      <Input
+                        id="sideImageAll"
                         type="file"
                         accept="image/*"
                         onChange={handleImageUpload}
+                        className="mt-1"
                       />
                       {selectedImage && (
                         <p className="text-xs text-green-600 mt-1">✅ Side edge uploaded</p>
                       )}
                     </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <Label>5. Upload Edge Images (choose which edges you want)</Label>
-                      
-                      <div>
-                        <Label htmlFor="topImage" className="text-sm">Top Edge Image <span className="text-gray-500">(optional)</span></Label>
-                        <Input
-                          id="topImage"
-                          type="file"
-                          accept="image/*"
-                          onChange={handleTopEdgeUpload}
-                          className="mt-1"
-                        />
-                        {topEdgeImage && (
-                          <p className="text-xs text-green-600 mt-1">✅ Top edge uploaded</p>
-                        )}
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="sideImageAll" className="text-sm">Side Edge Image <span className="text-gray-500">(optional)</span></Label>
-                        <Input
-                          id="sideImageAll"
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageUpload}
-                          className="mt-1"
-                        />
-                        {selectedImage && (
-                          <p className="text-xs text-green-600 mt-1">✅ Side edge uploaded</p>
-                        )}
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="bottomImage" className="text-sm">Bottom Edge Image <span className="text-gray-500">(optional)</span></Label>
-                        <Input
-                          id="bottomImage"
-                          type="file"
-                          accept="image/*"
-                          onChange={handleBottomEdgeUpload}
-                          className="mt-1"
-                        />
-                        {bottomEdgeImage && (
-                          <p className="text-xs text-green-600 mt-1">✅ Bottom edge uploaded</p>
-                        )}
-                      </div>
-                      
-                      {!topEdgeImage && !selectedImage && !bottomEdgeImage && (
-                        <p className="text-xs text-amber-600">Please upload at least one edge image</p>
+
+                    <div>
+                      <Label htmlFor="bottomImage" className="text-sm">Bottom Edge Image <span className="text-gray-500">(optional)</span></Label>
+                      <Input
+                        id="bottomImage"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleBottomEdgeUpload}
+                        className="mt-1"
+                      />
+                      {bottomEdgeImage && (
+                        <p className="text-xs text-green-600 mt-1">✅ Bottom edge uploaded</p>
                       )}
                     </div>
-                  )}
+
+                    {!topEdgeImage && !selectedImage && !bottomEdgeImage && (
+                      <p className="text-xs text-amber-600">Please upload at least one edge image</p>
+                    )}
+                  </div>
                 </div>
               )}
 
               {/* Preview Button */}
               {((selectedPdf && totalPages > 0) || (useCustomDimensions && totalPages > 0)) && 
-               ((edgeType === "side-only" && selectedImage) || 
-                (edgeType === "all-edges" && (selectedImage || topEdgeImage || bottomEdgeImage))) && (
+               (selectedImage || topEdgeImage || bottomEdgeImage) && (
                 <Button
                   onClick={generatePreview}
                   variant="outline"
@@ -974,8 +682,7 @@ Calculations:
 
               {/* Process Button */}
               {((selectedPdf && totalPages > 0) || (useCustomDimensions && totalPages > 0)) && 
-               ((edgeType === "side-only" && selectedImage) || 
-                (edgeType === "all-edges" && (selectedImage || topEdgeImage || bottomEdgeImage))) && (
+               (selectedImage || topEdgeImage || bottomEdgeImage) && (
                 <div className="space-y-3">
                   <Button
                     onClick={processActualPdf}
@@ -1149,7 +856,7 @@ Calculations:
                                 transform: "scaleX(-1) skewY(2deg)",
                                 transformOrigin: "left center",
                                 // Always miter corners in all-edges mode
-                                clipPath: edgeType === "all-edges" ?
+                                clipPath: true ?
                                   `polygon(0 ${Math.max(0.125 * 50, 6)}px, 100% 0, 100% 100%, 0 calc(100% - ${Math.max(0.125 * 50, 6)}px))` : // Miter both corners
                                   'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners for side-only mode
                               }}
@@ -1157,7 +864,7 @@ Calculations:
                           )}
 
                           {/* Top Edge Strip for Left Page (only if top edge image is uploaded) */}
-                          {edgeType === "all-edges" && topEdgeImage && currentPage > 1 && selectedImage && (
+                          { topEdgeImage && currentPage > 1 && selectedImage && (
                             <div
                               className="absolute top-0 left-0 w-full border-t border-gray-400"
                               style={{
@@ -1173,7 +880,7 @@ Calculations:
                                 transformOrigin: "center top",
                                 zIndex: 10,
                                 // Always miter the outer corner in all-edges mode
-                                clipPath: edgeType === "all-edges" ?
+                                clipPath: true ?
                                   `polygon(0 0, 100% 0, calc(100% - ${Math.max(0.125 * 50, 6)}px) 100%, 0 100%)` : // Miter outer corner
                                   'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners for side-only mode
                               }}
@@ -1181,7 +888,7 @@ Calculations:
                           )}
 
                           {/* Bottom Edge Strip for Left Page (only if bottom edge image is uploaded) */}
-                          {edgeType === "all-edges" && bottomEdgeImage && currentPage > 1 && selectedImage && (
+                          { bottomEdgeImage && currentPage > 1 && selectedImage && (
                             <div
                               className="absolute bottom-0 left-0 w-full border-b border-gray-400"
                               style={{
@@ -1197,7 +904,7 @@ Calculations:
                                 transformOrigin: "center bottom",
                                 zIndex: 10,
                                 // Always miter the outer corner in all-edges mode
-                                clipPath: edgeType === "all-edges" ?
+                                clipPath: true ?
                                   `polygon(0 0, calc(100% - ${Math.max(0.125 * 50, 6)}px) 0, 100% 100%, 0 100%)` : // Miter outer corner
                                   'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners for side-only mode
                               }}
@@ -1269,14 +976,14 @@ Calculations:
                               transform: "skewY(-2deg)",
                               transformOrigin: "right center",
                               // Miter corners when top/bottom edges exist - only trim the actual corners
-                              clipPath: edgeType === "all-edges" && (topEdgeImage || bottomEdgeImage) ?
+                              clipPath:  (topEdgeImage || bottomEdgeImage) ?
                                 `polygon(0 ${Math.max(0.125 * 50, 6)}px, 100% 0, 100% 100%, 0 calc(100% - ${Math.max(0.125 * 50, 6)}px))` : // 45-degree corner cuts - only bottom corner
                                 'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners
                             }}
                           />
 
                           {/* Top Edge Strip (only if top edge image is uploaded) */}
-                          {edgeType === "all-edges" && topEdgeImage && (
+                          { topEdgeImage && (
                             <div
                               className="absolute top-0 left-0 w-full border-t border-gray-400"
                               style={{
@@ -1292,7 +999,7 @@ Calculations:
                                 transformOrigin: "center top",
                                 zIndex: 10,
                                 // Always miter the outer corner in all-edges mode
-                                clipPath: edgeType === "all-edges" ?
+                                clipPath: true ?
                                   `polygon(0 0, 100% 0, calc(100% - ${Math.max(0.125 * 50, 6)}px) 100%, 0 100%)` : // Miter outer corner (top-right)
                                   'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners for side-only mode
                               }}
@@ -1300,7 +1007,7 @@ Calculations:
                           )}
 
                           {/* Bottom Edge Strip (only if bottom edge image is uploaded) */}
-                          {edgeType === "all-edges" && bottomEdgeImage && (
+                          { bottomEdgeImage && (
                             <div
                               className="absolute bottom-0 left-0 w-full border-b border-gray-400"
                               style={{

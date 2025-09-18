@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { sliceEdgeImages } from './edge-slicer';
+import { createAndStoreRawSlices, createAndStoreMaskedSlices } from './edge-slicer';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -22,6 +22,7 @@ export async function processPDFWithSlicing(
     edgeType: 'side-only' | 'all-edges';
     trimWidth: number;
     trimHeight: number;
+    scaleMode?: 'stretch' | 'fit' | 'fill' | 'none';
   }
 ) {
   if (!supabase) {
@@ -29,6 +30,9 @@ export async function processPDFWithSlicing(
   }
 
   try {
+    // Generate unique session ID for this processing run
+    const sessionId = `${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+
     // First, convert edge files to base64 for slicing
     const edgeImages: any = {};
 
@@ -47,48 +51,66 @@ export async function processPDFWithSlicing(
       edgeImages.bottom = { base64: bottomBase64 };
     }
 
-    console.log('Slicing edge images...');
+    // Calculate PDF dimensions with bleed (matching the server-side calculations)
+    const BLEED_INCHES = 0.125;
+    const POINTS_PER_INCH = 72;
+    const BLEED_POINTS = BLEED_INCHES * POINTS_PER_INCH;
 
-    // Slice the edge images on the client side
-    const slicedImages = await sliceEdgeImages(edgeImages, {
+    let pdfWidth = options.trimWidth;
+    let pdfHeight = options.trimHeight;
+
+    if (options.bleedType === 'add_bleed') {
+      pdfWidth = options.trimWidth + BLEED_POINTS;
+      pdfHeight = options.trimHeight + (2 * BLEED_POINTS);
+    }
+
+    console.log('Creating and storing raw slices...');
+
+    // STAGE 1: Create raw slices and store them
+    const rawSlicesPaths = await createAndStoreRawSlices(edgeImages, {
       numPages: options.numPages,
       pageType: options.pageType as 'bw' | 'standard' | 'premium',
       edgeType: options.edgeType,
       trimWidth: options.trimWidth,
-      trimHeight: options.trimHeight
-    });
+      trimHeight: options.trimHeight,
+      scaleMode: options.scaleMode,
+      pdfDimensions: { width: pdfWidth, height: pdfHeight }
+    }, sessionId);
 
-    console.log(`Created ${slicedImages.side?.length || 0} side slices`);
+    console.log(`Created raw slices - Side: ${rawSlicesPaths.side?.raw.length || 0}, Top: ${rawSlicesPaths.top?.raw.length || 0}, Bottom: ${rawSlicesPaths.bottom?.raw.length || 0}`);
+
+    console.log('Creating and storing masked slices...');
+
+    // STAGE 2: Apply triangle masks and store masked versions
+    const maskedSlicesPaths = await createAndStoreMaskedSlices(rawSlicesPaths, {
+      numPages: options.numPages,
+      pageType: options.pageType as 'bw' | 'standard' | 'premium',
+      edgeType: options.edgeType,
+      trimWidth: options.trimWidth,
+      trimHeight: options.trimHeight,
+      scaleMode: options.scaleMode,
+      pdfDimensions: { width: pdfWidth, height: pdfHeight }
+    }, sessionId);
+
+    console.log(`Created masked slices - Side: ${maskedSlicesPaths.side?.masked.length || 0}, Top: ${maskedSlicesPaths.top?.masked.length || 0}, Bottom: ${maskedSlicesPaths.bottom?.masked.length || 0}`);
 
     // Convert PDF to base64
     const pdfBase64 = await fileToBase64(pdfFile);
 
-    // Prepare sliced images for Edge Function
-    const edgeImagesForProcessing: any = {};
+    console.log('Calling Edge Function with storage paths...');
 
-    if (slicedImages.side) {
-      edgeImagesForProcessing.side = slicedImages.side;
-    }
-    if (slicedImages.top) {
-      edgeImagesForProcessing.top = slicedImages.top;
-    }
-    if (slicedImages.bottom) {
-      edgeImagesForProcessing.bottom = slicedImages.bottom;
-    }
-
-    console.log('Calling Edge Function with sliced images...');
-
-    // Call the Edge Function with sliced images
-    const { data, error } = await supabase.functions.invoke('process-pdf-with-slices', {
+    // Call the Edge Function with storage paths instead of base64 images
+    const { data, error } = await supabase.functions.invoke('process-pdf-with-storage-slices', {
       body: {
         pdfBase64,
-        slicedEdgeImages: edgeImagesForProcessing,
+        sliceStoragePaths: maskedSlicesPaths,
         numPages: options.numPages,
         pageType: options.pageType,
         bleedType: options.bleedType,
         edgeType: options.edgeType,
         trimWidth: options.trimWidth,
-        trimHeight: options.trimHeight
+        trimHeight: options.trimHeight,
+        sessionId
       }
     });
 

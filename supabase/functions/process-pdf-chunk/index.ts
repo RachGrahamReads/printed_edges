@@ -14,6 +14,21 @@ const POINTS_PER_INCH = 72;
 const BLEED_POINTS = BLEED_INCHES * POINTS_PER_INCH;
 const SAFETY_BUFFER_POINTS = SAFETY_BUFFER_INCHES * POINTS_PER_INCH;
 
+interface SliceStoragePaths {
+  side?: {
+    raw: string[];
+    masked: string[];
+  };
+  top?: {
+    raw: string[];
+    masked: string[];
+  };
+  bottom?: {
+    raw: string[];
+    masked: string[];
+  };
+}
+
 interface ChunkProcessRequest {
   sessionId: string;
   chunkPath: string;
@@ -21,11 +36,7 @@ interface ChunkProcessRequest {
   totalChunks: number;
   startPage: number; // Global page number for this chunk
   endPage: number;   // Global page number for this chunk
-  slicedPaths: {
-    side?: string[];
-    top?: string[];
-    bottom?: string[];
-  };
+  sliceStoragePaths: SliceStoragePaths;
   bleedType: 'add_bleed' | 'existing_bleed';
   edgeType: 'side-only' | 'all-edges';
 }
@@ -135,33 +146,33 @@ serve(async (req) => {
 
       // Add side edge
       if ((requestData.edgeType === 'side-only' || requestData.edgeType === 'all-edges') &&
-          requestData.slicedPaths.side && requestData.slicedPaths.side[leafNumber]) {
+          requestData.sliceStoragePaths.side && requestData.sliceStoragePaths.side.masked[leafNumber]) {
 
         await addEdgeToPage(
           supabase, newPage, processedDoc, loadedSlices,
-          requestData.slicedPaths.side[leafNumber],
+          requestData.sliceStoragePaths.side.masked[leafNumber],
           'side', globalPageIndex, newWidth, newHeight, edgeStripWidth, edgeStripHeight
         );
       }
 
       // Add top edge
       if (requestData.edgeType === 'all-edges' &&
-          requestData.slicedPaths.top && requestData.slicedPaths.top[leafNumber]) {
+          requestData.sliceStoragePaths.top && requestData.sliceStoragePaths.top.masked[leafNumber]) {
 
         await addEdgeToPage(
           supabase, newPage, processedDoc, loadedSlices,
-          requestData.slicedPaths.top[leafNumber],
+          requestData.sliceStoragePaths.top.masked[leafNumber],
           'top', globalPageIndex, newWidth, newHeight, edgeStripWidth, edgeStripHeight
         );
       }
 
       // Add bottom edge
       if (requestData.edgeType === 'all-edges' &&
-          requestData.slicedPaths.bottom && requestData.slicedPaths.bottom[leafNumber]) {
+          requestData.sliceStoragePaths.bottom && requestData.sliceStoragePaths.bottom.masked[leafNumber]) {
 
         await addEdgeToPage(
           supabase, newPage, processedDoc, loadedSlices,
-          requestData.slicedPaths.bottom[leafNumber],
+          requestData.sliceStoragePaths.bottom.masked[leafNumber],
           'bottom', globalPageIndex, newWidth, newHeight, edgeStripWidth, edgeStripHeight
         );
       }

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { PDFDocument, rgb } from "npm:pdf-lib@1.17.1";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // CORS headers
 const corsHeaders = {
@@ -15,19 +16,31 @@ const POINTS_PER_INCH = 72;
 const BLEED_POINTS = BLEED_INCHES * POINTS_PER_INCH;
 const SAFETY_BUFFER_POINTS = SAFETY_BUFFER_INCHES * POINTS_PER_INCH;
 
+interface SliceStoragePaths {
+  side?: {
+    raw: string[];
+    masked: string[];
+  };
+  top?: {
+    raw: string[];
+    masked: string[];
+  };
+  bottom?: {
+    raw: string[];
+    masked: string[];
+  };
+}
+
 interface ProcessRequest {
   pdfBase64: string;
-  slicedEdgeImages: {
-    side?: string[];
-    top?: string[];
-    bottom?: string[];
-  };
+  sliceStoragePaths: SliceStoragePaths;
   numPages: number;
   pageType: string;
   bleedType: 'add_bleed' | 'existing_bleed';
   edgeType: 'side-only' | 'all-edges';
   trimWidth?: number;
   trimHeight?: number;
+  sessionId: string;
 }
 
 async function base64ToUint8Array(base64: string): Promise<Uint8Array> {
@@ -39,6 +52,12 @@ async function base64ToUint8Array(base64: string): Promise<Uint8Array> {
   return bytes;
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const uint8Array = new Uint8Array(arrayBuffer);
+  const binaryString = String.fromCharCode(...uint8Array);
+  return btoa(binaryString);
+}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -49,15 +68,19 @@ serve(async (req) => {
   try {
     const requestData: ProcessRequest = await req.json();
 
-    console.log('Processing PDF with sliced images...');
+    console.log('Processing PDF with storage-based sliced images...');
     console.log('Request received:', {
       hasPdf: !!requestData.pdfBase64,
-      hasSlicedImages: !!requestData.slicedEdgeImages,
+      hasStoragePaths: !!requestData.sliceStoragePaths,
       edgeType: requestData.edgeType,
       numPages: requestData.numPages,
-      sideSlices: requestData.slicedEdgeImages.side?.length || 0,
-      topSlices: requestData.slicedEdgeImages.top?.length || 0,
-      bottomSlices: requestData.slicedEdgeImages.bottom?.length || 0
+      sessionId: requestData.sessionId,
+      sideSlicesRaw: requestData.sliceStoragePaths.side?.raw.length || 0,
+      sideSlicesMasked: requestData.sliceStoragePaths.side?.masked.length || 0,
+      topSlicesRaw: requestData.sliceStoragePaths.top?.raw.length || 0,
+      topSlicesMasked: requestData.sliceStoragePaths.top?.masked.length || 0,
+      bottomSlicesRaw: requestData.sliceStoragePaths.bottom?.raw.length || 0,
+      bottomSlicesMasked: requestData.sliceStoragePaths.bottom?.masked.length || 0
     });
 
     // Validate required fields
@@ -65,11 +88,16 @@ serve(async (req) => {
       throw new Error("PDF base64 data is required");
     }
 
-    if (!requestData.slicedEdgeImages ||
-        (requestData.edgeType === 'side-only' && !requestData.slicedEdgeImages.side) ||
-        (requestData.edgeType === 'all-edges' && !requestData.slicedEdgeImages.side && !requestData.slicedEdgeImages.top && !requestData.slicedEdgeImages.bottom)) {
-      throw new Error("Sliced edge images are required based on edge type");
+    if (!requestData.sliceStoragePaths ||
+        (requestData.edgeType === 'side-only' && !requestData.sliceStoragePaths.side) ||
+        (requestData.edgeType === 'all-edges' && !requestData.sliceStoragePaths.side && !requestData.sliceStoragePaths.top && !requestData.sliceStoragePaths.bottom)) {
+      throw new Error("Slice storage paths are required based on edge type");
     }
+
+    // Initialize Supabase client for storage access
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || 'http://127.0.0.1:54321';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Convert base64 PDF to bytes
     const pdfBytes = await base64ToUint8Array(requestData.pdfBase64);
@@ -108,7 +136,7 @@ serve(async (req) => {
     const newPdfDoc = await PDFDocument.create();
 
     // Set metadata
-    newPdfDoc.setTitle('Processed PDF with Sliced Edges');
+    newPdfDoc.setTitle('Processed PDF with Storage-Based Sliced Edges');
     newPdfDoc.setProducer('Printed Edges App');
     newPdfDoc.setCreationDate(new Date());
     newPdfDoc.setModificationDate(new Date());
@@ -155,19 +183,32 @@ serve(async (req) => {
         height: originalHeight,
       });
 
-      // Add edge image processing with sliced images
+      // Add edge image processing with storage-based sliced images
       const edgeStripWidth = BLEED_POINTS + SAFETY_BUFFER_POINTS;
       const edgeStripHeight = BLEED_POINTS + SAFETY_BUFFER_POINTS;
 
-      // Process side edges with sliced images (always processed if available)
-      if (requestData.slicedEdgeImages.side && requestData.slicedEdgeImages.side[leafNumber]) {
+      // Process side edges with storage-based sliced images (always processed if available)
+      if (requestData.sliceStoragePaths.side && requestData.sliceStoragePaths.side.masked[leafNumber]) {
         try {
-          const sliceBase64 = requestData.slicedEdgeImages.side[leafNumber];
+          const slicePath = requestData.sliceStoragePaths.side.masked[leafNumber];
           const flipHorizontally = pageNum % 2 !== 0; // Left pages are flipped
           const cacheKey = `side_${leafNumber}_${flipHorizontally}`;
 
           // Embed the sliced image if not already cached
           if (!embeddedSlices[cacheKey]) {
+            console.log(`Loading side slice from storage: ${slicePath}`);
+
+            // Download slice from storage
+            const { data: sliceBlob, error: downloadError } = await supabase.storage
+              .from('edge-images')
+              .download(slicePath);
+
+            if (downloadError) {
+              throw new Error(`Failed to download slice: ${downloadError.message}`);
+            }
+
+            // Convert blob to base64 and embed
+            const sliceBase64 = await blobToBase64(sliceBlob);
             const imageBytes = await base64ToUint8Array(sliceBase64);
             embeddedSlices[cacheKey] = await newPdfDoc.embedPng(imageBytes);
           }
@@ -202,7 +243,7 @@ serve(async (req) => {
             });
           }
 
-          console.log(`Added sliced side edge image (leaf ${leafNumber}) to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
+          console.log(`Added storage-based side edge image (leaf ${leafNumber}) to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
         } catch (error) {
           console.error(`Failed to add side edge to page ${pageNum + 1}:`, error.message);
           // Fallback to colored rectangle
@@ -218,16 +259,29 @@ serve(async (req) => {
         }
       }
 
-      // Add top/bottom edges with sliced images (always processed)
+      // Add top/bottom edges with storage-based sliced images (always processed)
       {
         // Top edge
-        if (requestData.slicedEdgeImages.top && requestData.slicedEdgeImages.top[leafNumber]) {
+        if (requestData.sliceStoragePaths.top && requestData.sliceStoragePaths.top.masked[leafNumber]) {
           try {
-            const sliceBase64 = requestData.slicedEdgeImages.top[leafNumber];
+            const slicePath = requestData.sliceStoragePaths.top.masked[leafNumber];
             const flipHorizontally = pageNum % 2 !== 0; // Left pages are flipped
             const cacheKey = `top_${leafNumber}_${flipHorizontally}`;
 
             if (!embeddedSlices[cacheKey]) {
+              console.log(`Loading top slice from storage: ${slicePath}`);
+
+              // Download slice from storage
+              const { data: sliceBlob, error: downloadError } = await supabase.storage
+                .from('edge-images')
+                .download(slicePath);
+
+              if (downloadError) {
+                throw new Error(`Failed to download slice: ${downloadError.message}`);
+              }
+
+              // Convert blob to base64 and embed
+              const sliceBase64 = await blobToBase64(sliceBlob);
               const imageBytes = await base64ToUint8Array(sliceBase64);
               embeddedSlices[cacheKey] = await newPdfDoc.embedPng(imageBytes);
             }
@@ -251,7 +305,7 @@ serve(async (req) => {
               });
             }
 
-            console.log(`Added sliced top edge image (leaf ${leafNumber}) to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
+            console.log(`Added storage-based top edge image (leaf ${leafNumber}) to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
           } catch (error) {
             console.error(`Failed to add top edge to page ${pageNum + 1}:`, error.message);
             newPage.drawRectangle({
@@ -266,13 +320,26 @@ serve(async (req) => {
         }
 
         // Bottom edge
-        if (requestData.slicedEdgeImages.bottom && requestData.slicedEdgeImages.bottom[leafNumber]) {
+        if (requestData.sliceStoragePaths.bottom && requestData.sliceStoragePaths.bottom.masked[leafNumber]) {
           try {
-            const sliceBase64 = requestData.slicedEdgeImages.bottom[leafNumber];
+            const slicePath = requestData.sliceStoragePaths.bottom.masked[leafNumber];
             const flipHorizontally = pageNum % 2 !== 0; // Left pages are flipped
             const cacheKey = `bottom_${leafNumber}_${flipHorizontally}`;
 
             if (!embeddedSlices[cacheKey]) {
+              console.log(`Loading bottom slice from storage: ${slicePath}`);
+
+              // Download slice from storage
+              const { data: sliceBlob, error: downloadError } = await supabase.storage
+                .from('edge-images')
+                .download(slicePath);
+
+              if (downloadError) {
+                throw new Error(`Failed to download slice: ${downloadError.message}`);
+              }
+
+              // Convert blob to base64 and embed
+              const sliceBase64 = await blobToBase64(sliceBlob);
               const imageBytes = await base64ToUint8Array(sliceBase64);
               embeddedSlices[cacheKey] = await newPdfDoc.embedPng(imageBytes);
             }
@@ -296,7 +363,7 @@ serve(async (req) => {
               });
             }
 
-            console.log(`Added sliced bottom edge image (leaf ${leafNumber}) to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
+            console.log(`Added storage-based bottom edge image (leaf ${leafNumber}) to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
           } catch (error) {
             console.error(`Failed to add bottom edge to page ${pageNum + 1}:`, error.message);
             newPage.drawRectangle({
@@ -339,7 +406,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       success: false,
       error: error.message,
-      details: 'PDF processing failed in Edge Function'
+      details: 'PDF processing failed in Storage-based Edge Function'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

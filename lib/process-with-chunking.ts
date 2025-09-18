@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { sliceEdgeImages } from './edge-slicer';
+import { createAndStoreRawSlices, createAndStoreMaskedSlices } from './edge-slicer';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -24,6 +24,7 @@ export async function processPDFWithChunking(
     edgeType: 'side-only' | 'all-edges';
     trimWidth: number;
     trimHeight: number;
+    scaleMode?: 'stretch' | 'fit' | 'fill' | 'none';
   },
   onProgress?: (progress: number) => void
 ) {
@@ -34,8 +35,7 @@ export async function processPDFWithChunking(
   try {
     const sessionId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // First, slice edge images client-side
-    console.log('Slicing edge images...');
+    // First, convert edge files to base64 for slicing
     const edgeImages: any = {};
 
     if (edgeFiles.side) {
@@ -53,61 +53,48 @@ export async function processPDFWithChunking(
       edgeImages.bottom = { base64: bottomBase64 };
     }
 
-    const slicedImages = await sliceEdgeImages(edgeImages, {
+    // Calculate PDF dimensions with bleed (matching the server-side calculations)
+    const BLEED_INCHES = 0.125;
+    const POINTS_PER_INCH = 72;
+    const BLEED_POINTS = BLEED_INCHES * POINTS_PER_INCH;
+
+    let pdfWidth = options.trimWidth;
+    let pdfHeight = options.trimHeight;
+
+    if (options.bleedType === 'add_bleed') {
+      pdfWidth = options.trimWidth + BLEED_POINTS;
+      pdfHeight = options.trimHeight + (2 * BLEED_POINTS);
+    }
+
+    console.log('Creating and storing raw slices...');
+
+    // STAGE 1: Create raw slices and store them
+    const rawSlicesPaths = await createAndStoreRawSlices(edgeImages, {
       numPages: options.numPages,
       pageType: options.pageType as 'bw' | 'standard' | 'premium',
       edgeType: options.edgeType,
       trimWidth: options.trimWidth,
-      trimHeight: options.trimHeight
-    });
+      trimHeight: options.trimHeight,
+      scaleMode: options.scaleMode,
+      pdfDimensions: { width: pdfWidth, height: pdfHeight }
+    }, sessionId);
 
-    console.log(`Created ${slicedImages.side?.length || 0} edge slices`);
+    console.log(`Created raw slices - Side: ${rawSlicesPaths.side?.raw.length || 0}, Top: ${rawSlicesPaths.top?.raw.length || 0}, Bottom: ${rawSlicesPaths.bottom?.raw.length || 0}`);
 
-    // Upload sliced images to storage
-    console.log('Uploading sliced images to storage...');
-    const slicedPaths: any = {};
+    console.log('Creating and storing masked slices...');
 
-    if (slicedImages.side) {
-      slicedPaths.side = [];
-      for (let i = 0; i < slicedImages.side.length; i++) {
-        const path = `${sessionId}/slices/side_${i}.png`;
-        const bytes = base64ToUint8Array(slicedImages.side[i]);
-        const { error } = await supabase.storage.from('edge-images').upload(path, bytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
-        if (error) throw error;
-        slicedPaths.side.push(path);
-      }
-    }
+    // STAGE 2: Apply triangle masks and store masked versions
+    const maskedSlicesPaths = await createAndStoreMaskedSlices(rawSlicesPaths, {
+      numPages: options.numPages,
+      pageType: options.pageType as 'bw' | 'standard' | 'premium',
+      edgeType: options.edgeType,
+      trimWidth: options.trimWidth,
+      trimHeight: options.trimHeight,
+      scaleMode: options.scaleMode,
+      pdfDimensions: { width: pdfWidth, height: pdfHeight }
+    }, sessionId);
 
-    if (slicedImages.top) {
-      slicedPaths.top = [];
-      for (let i = 0; i < slicedImages.top.length; i++) {
-        const path = `${sessionId}/slices/top_${i}.png`;
-        const bytes = base64ToUint8Array(slicedImages.top[i]);
-        const { error } = await supabase.storage.from('edge-images').upload(path, bytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
-        if (error) throw error;
-        slicedPaths.top.push(path);
-      }
-    }
-
-    if (slicedImages.bottom) {
-      slicedPaths.bottom = [];
-      for (let i = 0; i < slicedImages.bottom.length; i++) {
-        const path = `${sessionId}/slices/bottom_${i}.png`;
-        const bytes = base64ToUint8Array(slicedImages.bottom[i]);
-        const { error } = await supabase.storage.from('edge-images').upload(path, bytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
-        if (error) throw error;
-        slicedPaths.bottom.push(path);
-      }
-    }
+    console.log(`Created masked slices - Side: ${maskedSlicesPaths.side?.masked.length || 0}, Top: ${maskedSlicesPaths.top?.masked.length || 0}, Bottom: ${maskedSlicesPaths.bottom?.masked.length || 0}`);
 
     // Upload PDF
     console.log('Uploading PDF...');
@@ -153,7 +140,7 @@ export async function processPDFWithChunking(
           totalChunks: chunks.length,
           startPage: chunk.startPage,
           endPage: chunk.endPage,
-          slicedPaths,
+          sliceStoragePaths: maskedSlicesPaths,
           bleedType: options.bleedType,
           edgeType: options.edgeType
         }
