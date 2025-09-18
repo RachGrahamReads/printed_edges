@@ -58,13 +58,19 @@ export async function processPDFWithChunking(
     const POINTS_PER_INCH = 72;
     const BLEED_POINTS = BLEED_INCHES * POINTS_PER_INCH;
 
-    let pdfWidth = options.trimWidth;
-    let pdfHeight = options.trimHeight;
+    // Convert trim dimensions from inches to points
+    const trimWidthPoints = options.trimWidth * POINTS_PER_INCH;
+    const trimHeightPoints = options.trimHeight * POINTS_PER_INCH;
+
+    let pdfWidth = trimWidthPoints;
+    let pdfHeight = trimHeightPoints;
 
     if (options.bleedType === 'add_bleed') {
-      pdfWidth = options.trimWidth + BLEED_POINTS;
-      pdfHeight = options.trimHeight + (2 * BLEED_POINTS);
+      pdfWidth = trimWidthPoints + BLEED_POINTS;
+      pdfHeight = trimHeightPoints + (2 * BLEED_POINTS);
     }
+
+    console.log(`PDF dimensions: ${options.trimWidth}" × ${options.trimHeight}" = ${pdfWidth}pt × ${pdfHeight}pt`);
 
     console.log('Creating and storing raw slices...');
 

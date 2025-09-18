@@ -268,10 +268,10 @@ export default function Home() {
     // The image should be sized to match our requirements
     const expectedImageWidth = edgeType === 'side' ?
       numLeaves : // For side edges, width should be numLeaves pixels (1px per leaf)
-      ((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300); // For top/bottom
+      ((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 285.7); // For top/bottom
 
     const expectedImageHeight = edgeType === 'side' ?
-      ((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300) : // For side edges
+      ((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 285.7) : // For side edges
       numLeaves; // For top/bottom edges, height should be numLeaves pixels (1px per leaf)
 
     // All scale modes still use 1px slicing, but differ in how they display that pixel
@@ -569,43 +569,18 @@ export default function Home() {
                     <div>
                       <p className="font-medium text-sm">Required Image Sizes:</p>
                       <div className="text-sm text-blue-700 space-y-1">
-                        <p>Top: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × {numLeaves}px minimum</p>
-                        <p>Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)}px minimum</p>
-                        <p>Bottom: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} × {numLeaves}px minimum</p>
+                        <p>Top: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 285.7).toFixed(0)} × {numLeaves}px minimum</p>
+                        <p>Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 285.7).toFixed(0)}px minimum</p>
+                        <p>Bottom: {((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 285.7).toFixed(0)} × {numLeaves}px minimum</p>
                       </div>
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => {
-                          const details = `Required Edge Image Details:
-
-Top Edge Image:
-Width: ${((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} pixels (${(bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth).toFixed(2)}" at 300 DPI)
-Height: ${numLeaves} pixels (1 pixel per leaf)
-
-Side Edge Image:
-Width: ${numLeaves} pixels (1 pixel per leaf)
-Height: ${((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300).toFixed(0)} pixels (${(bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight).toFixed(2)}" at 300 DPI)
-
-Bottom Edge Image:
-Width: ${((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 300).toFixed(0)} pixels (${(bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth).toFixed(2)}" at 300 DPI)
-Height: ${numLeaves} pixels (1 pixel per leaf)
-
-Your PDF: ${totalPages} pages (${numLeaves} leaves), ${bookWidth}" × ${bookHeight}"
-Bleed: ${bleedType === "add_bleed" ? "Will add 0.125\" bleed" : "Using existing bleed"}
-
-Now using 1 pixel per leaf approach - no paper thickness calculations needed.`;
-                          alert(details);
-                        }}
-                        className="text-xs text-blue-600 hover:text-blue-800 underline"
-                      >
-                        Details
-                      </button>
-                      <button
                         onClick={generateTemplate}
-                        className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                        className="text-xs bg-gray-400 text-white px-2 py-1 rounded cursor-not-allowed"
+                        disabled
                       >
-                        📦 Templates
+                        📦 Templates (temporarily disabled)
                       </button>
                     </div>
                   </div>
@@ -738,7 +713,6 @@ Now using 1 pixel per leaf approach - no paper thickness calculations needed.`;
                     <p className="text-gray-500 mb-4">Upload files and click "Generate Preview" to see your custom edges</p>
                     <p className="text-xs text-gray-400">• Choose edge image file</p>
                     <p className="text-xs text-gray-400">• Choose PDF file</p>
-                    <p className="text-xs text-gray-400">• Select paper type for accurate thickness calculations</p>
                     <p className="text-xs text-gray-400">• Click generate to see the preview with custom edges</p>
                   </div>
                 </div>

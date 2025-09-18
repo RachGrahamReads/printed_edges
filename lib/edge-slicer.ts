@@ -8,8 +8,20 @@ const BLEED_POINTS = BLEED_INCHES * POINTS_PER_INCH; // 9 points
 const SAFETY_BUFFER_POINTS = SAFETY_BUFFER_INCHES * POINTS_PER_INCH; // 9 points
 const EDGE_STRIP_SIZE = BLEED_POINTS + SAFETY_BUFFER_POINTS; // 18 points (0.25 inches)
 
-// Canvas working resolution - configurable for easy adjustment
-const CANVAS_DPI = 72; // Working DPI for canvas pixel calculations
+// Paper thickness configuration
+const PAPER_THICKNESS = {
+  'bw': 0.0035,        // Standard thickness for all paper types
+  'standard': 0.0035,  // 0.0035 inches
+  'premium': 0.0035    // Using same thickness for now, can be differentiated later
+};
+
+// Calculate DPI based on paper thickness for proper edge image resolution
+function getEdgeImageDPI(pageType: 'bw' | 'standard' | 'premium'): number {
+  const thickness = PAPER_THICKNESS[pageType];
+  const dpi = 1 / thickness; // ~285.7 DPI for 0.0035" thickness
+  console.log(`DPI calculation: pageType=${pageType}, thickness=${thickness}, DPI=${dpi}`);
+  return dpi;
+}
 
 // Supabase client for storage operations
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -19,9 +31,12 @@ export const supabase = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-// Helper function to convert PDF points to canvas pixels
-function pointsToCanvasPixels(points: number): number {
-  return Math.round((points / POINTS_PER_INCH) * CANVAS_DPI);
+// Helper function to convert PDF points to canvas pixels with dynamic DPI
+function pointsToCanvasPixels(points: number, pageType: 'bw' | 'standard' | 'premium' = 'standard'): number {
+  const edgeDPI = getEdgeImageDPI(pageType);
+  const pixels = Math.round((points / POINTS_PER_INCH) * edgeDPI);
+  console.log(`Points to pixels: ${points}pt → ${pixels}px (${points/POINTS_PER_INCH}" × ${edgeDPI}DPI)`);
+  return pixels;
 }
 
 export interface SlicedEdgeImages {
@@ -80,7 +95,8 @@ export async function sliceEdgeImages(
       options.scaleMode || 'fill',
       options.centerMode || 'center',
       undefined, // No edge type for sides
-      options.pdfDimensions
+      options.pdfDimensions,
+      options.pageType
     );
   }
 
@@ -93,7 +109,8 @@ export async function sliceEdgeImages(
         options.scaleMode || 'fill',
         options.centerMode || 'center',
         'top',
-        options.pdfDimensions
+        options.pdfDimensions,
+        options.pageType
       );
     }
 
@@ -105,7 +122,8 @@ export async function sliceEdgeImages(
         options.scaleMode || 'fill',
         options.centerMode || 'center',
         'bottom',
-        options.pdfDimensions
+        options.pdfDimensions,
+        options.pageType
       );
     }
   }
@@ -132,7 +150,8 @@ export async function createRawSlices(
       'vertical',
       options.scaleMode || 'fill',
       options.centerMode || 'center',
-      options.pdfDimensions
+      options.pdfDimensions,
+      options.pageType
     );
   }
 
@@ -144,7 +163,8 @@ export async function createRawSlices(
         'horizontal',
         options.scaleMode || 'fill',
         options.centerMode || 'center',
-        options.pdfDimensions
+        options.pdfDimensions,
+        options.pageType
       );
     }
 
@@ -155,7 +175,8 @@ export async function createRawSlices(
         'horizontal',
         options.scaleMode || 'fill',
         options.centerMode || 'center',
-        options.pdfDimensions
+        options.pdfDimensions,
+        options.pageType
       );
     }
   }
@@ -281,9 +302,38 @@ export async function createAndStoreMaskedSlices(
     bottom: rawSlicesPaths.bottom ? { raw: [...rawSlicesPaths.bottom.raw], masked: [] } : undefined
   };
 
-  // Side edges don't need triangle masks - just copy raw paths to masked paths
+  // Process side edges with triangle masks
   if (rawSlicesPaths.side) {
-    maskedPaths.side!.masked = [...rawSlicesPaths.side.raw];
+    for (let i = 0; i < rawSlicesPaths.side.raw.length; i++) {
+      const rawPath = rawSlicesPaths.side.raw[i];
+
+      // Download raw slice from storage
+      const { data: rawSliceBlob, error: downloadError } = await supabase.storage
+        .from('edge-images')
+        .download(rawPath);
+
+      if (downloadError) throw downloadError;
+
+      // Convert blob to base64
+      const rawSliceBase64 = await blobToBase64(rawSliceBlob);
+
+      // Apply triangle mask
+      const maskedBase64 = await applyTriangleMaskToSlice(rawSliceBase64, 'side');
+
+      // Upload masked slice
+      const maskedPath = `${sessionId}/masked-slices/side_${i}.png`;
+      const maskedBytes = base64ToUint8Array(maskedBase64);
+
+      const { error: uploadError } = await supabase.storage
+        .from('edge-images')
+        .upload(maskedPath, maskedBytes, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+      maskedPaths.side!.masked.push(maskedPath);
+    }
   }
 
   // Process top edges with triangle masks
@@ -365,7 +415,8 @@ async function createRawSliceImage(
   orientation: 'vertical' | 'horizontal',
   scaleMode: 'stretch' | 'fit' | 'fill' | 'none',
   centerMode: 'start' | 'center' | 'end',
-  pdfDimensions?: { width: number; height: number }
+  pdfDimensions?: { width: number; height: number },
+  pageType: 'bw' | 'standard' | 'premium' = 'standard'
 ): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -382,9 +433,9 @@ async function createRawSliceImage(
 
           if (orientation === 'vertical') {
             recommendedWidth = Math.max(numLeaves, 100);
-            recommendedHeight = pointsToCanvasPixels(pdfDimensions.height);
+            recommendedHeight = pointsToCanvasPixels(pdfDimensions.height, pageType);
           } else {
-            recommendedWidth = pointsToCanvasPixels(pdfDimensions.width);
+            recommendedWidth = pointsToCanvasPixels(pdfDimensions.width, pageType);
             recommendedHeight = Math.max(numLeaves, 100);
           }
 
@@ -421,33 +472,42 @@ async function createRawSliceImage(
           const ctx = canvas.getContext('2d')!;
           ctx.imageSmoothingEnabled = false;
 
-          // Set canvas size using proper point-to-pixel conversion
+          // Set canvas size using proper point-to-pixel conversion with calculated DPI
           if (orientation === 'vertical') {
-            canvas.width = pointsToCanvasPixels(EDGE_STRIP_SIZE);
-            canvas.height = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.height) : img.height;
+            // For side edges: 0.25" strip width in pixels (will be ~71px with proper DPI)
+            const stripWidthPixels = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
+            const pageHeightPixels = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.height, pageType) : img.height;
+            console.log(`RAW Side edge canvas: ${stripWidthPixels} × ${pageHeightPixels} (DPI: ${getEdgeImageDPI(pageType)}, pageType: ${pageType})`);
+            canvas.width = stripWidthPixels;
+            canvas.height = pageHeightPixels;
 
+            // Calculate source X position within the sampling region
             const sourceX = Math.floor(samplingRegion.x + (leafPosition * samplingRegion.width));
             const clampedSourceX = Math.min(Math.max(sourceX, 0), img.width - 1);
 
+            // Create a pattern by replicating the 1px wide slice across the strip width
             for (let x = 0; x < canvas.width; x++) {
               ctx.drawImage(
                 img,
-                clampedSourceX, 0, 1, img.height,
-                x, 0, 1, canvas.height
+                clampedSourceX, 0, 1, img.height,  // Source: 1px wide × full height slice
+                x, 0, 1, canvas.height             // Destination: replicate across width
               );
             }
           } else {
-            canvas.width = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.width) : img.width;
-            canvas.height = pointsToCanvasPixels(EDGE_STRIP_SIZE);
+            // For top/bottom edges: full PDF width, 0.25" strip height in pixels (will be ~71px with proper DPI)
+            canvas.width = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.width, pageType) : img.width;
+            canvas.height = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
 
+            // Calculate source Y position within the sampling region
             const sourceY = Math.floor(samplingRegion.y + (leafPosition * samplingRegion.height));
             const clampedSourceY = Math.min(Math.max(sourceY, 0), img.height - 1);
 
+            // Create a pattern by replicating the 1px high slice across the strip height
             for (let y = 0; y < canvas.height; y++) {
               ctx.drawImage(
                 img,
-                0, clampedSourceY, img.width, 1,
-                0, y, canvas.width, 1
+                0, clampedSourceY, img.width, 1,  // Source: full width × 1px high slice
+                0, y, canvas.width, 1             // Destination: replicate across height
               );
             }
           }
@@ -475,7 +535,8 @@ async function sliceImage(
   scaleMode: 'stretch' | 'fit' | 'fill' | 'none',
   centerMode: 'start' | 'center' | 'end',
   edgeType?: 'top' | 'bottom',
-  pdfDimensions?: { width: number; height: number }
+  pdfDimensions?: { width: number; height: number },
+  pageType: 'bw' | 'standard' | 'premium' = 'standard'
 ): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -494,10 +555,10 @@ async function sliceImage(
           if (orientation === 'vertical') {
             // For side edges: slice width should match leaves, height should match PDF height in pixels
             recommendedWidth = Math.max(numLeaves, 100); // At least 100px for quality
-            recommendedHeight = pointsToCanvasPixels(pdfDimensions.height);
+            recommendedHeight = pointsToCanvasPixels(pdfDimensions.height, pageType);
           } else {
             // For top/bottom edges: width should match PDF width in pixels, height should match leaves
-            recommendedWidth = pointsToCanvasPixels(pdfDimensions.width);
+            recommendedWidth = pointsToCanvasPixels(pdfDimensions.width, pageType);
             recommendedHeight = Math.max(numLeaves, 100); // At least 100px for quality
           }
 
@@ -542,11 +603,11 @@ async function sliceImage(
           // Disable image smoothing for crisp pixel stretching
           ctx.imageSmoothingEnabled = false;
 
-          // Set canvas size using proper point-to-pixel conversion
+          // Set canvas size using proper point-to-pixel conversion with calculated DPI
           if (orientation === 'vertical') {
-            // For side edges: 0.25" strip width in pixels
-            canvas.width = pointsToCanvasPixels(EDGE_STRIP_SIZE); // 18 points → pixels
-            canvas.height = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.height) : img.height;
+            // For side edges: 0.25" strip width in pixels (will be ~71px with proper DPI)
+            canvas.width = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
+            canvas.height = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.height, pageType) : img.height;
 
             // Calculate source X position within the sampling region
             const sourceX = Math.floor(samplingRegion.x + (leafPosition * samplingRegion.width));
@@ -561,9 +622,9 @@ async function sliceImage(
               );
             }
           } else {
-            // For top/bottom edges: full PDF width, 0.25" strip height in pixels
-            canvas.width = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.width) : img.width;
-            canvas.height = pointsToCanvasPixels(EDGE_STRIP_SIZE); // 18 points → pixels
+            // For top/bottom edges: full PDF width, 0.25" strip height in pixels (will be ~71px with proper DPI)
+            canvas.width = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.width, pageType) : img.width;
+            canvas.height = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
 
             // Calculate source Y position within the sampling region
             const sourceY = Math.floor(samplingRegion.y + (leafPosition * samplingRegion.height));
@@ -687,31 +748,53 @@ function applyTriangleMask(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  edgeType: 'top' | 'bottom'
+  edgeType: 'top' | 'bottom' | 'side'
 ): void {
   // Use destination-out to cut transparent triangles
   ctx.globalCompositeOperation = 'destination-out';
   ctx.fillStyle = '#000000'; // Color doesn't matter for destination-out
   ctx.beginPath();
 
-  // Use canvas pixel dimensions for perfect 45° triangle
-  // Triangle size should match the canvas height (which is the strip size in pixels)
-  const triangleSize = height; // Use canvas height for perfect 45° angle
+  if (edgeType === 'side') {
+    // For side edges - cut triangles in top-left and bottom-right corners for proper mitring
+    // Triangle size should match the canvas width (which is the strip size in pixels)
+    const triangleSize = width; // Use canvas width for perfect 45° angle
 
-  if (edgeType === 'bottom') {
-    // For bottom edge - cut transparent triangle in top-right corner
-    ctx.moveTo(width, 0);                    // Top-right corner
-    ctx.lineTo(width, triangleSize);         // Down from top-right (18pt)
-    ctx.lineTo(width - triangleSize, 0);     // Left from top-right (18pt) - 45° diagonal
+    // Top-left triangle
+    ctx.moveTo(0, 0);                        // Top-left corner
+    ctx.lineTo(triangleSize, 0);             // Right from top-left (71px)
+    ctx.lineTo(0, triangleSize);             // Down from top-left (71px) - 45° diagonal
+    ctx.closePath();
+    ctx.fill();
+
+    // Bottom-left triangle
+    ctx.beginPath();
+    ctx.moveTo(0, height);                   // Bottom-left corner
+    ctx.lineTo(triangleSize, height);        // Right from bottom-left (71px)
+    ctx.lineTo(0, height - triangleSize);    // Up from bottom-left (71px) - 45° diagonal
+    ctx.closePath();
+    ctx.fill();
+
   } else {
-    // For top edge - cut transparent triangle in bottom-right corner
-    ctx.moveTo(width, height);                    // Bottom-right corner
-    ctx.lineTo(width, height - triangleSize);     // Up from bottom-right (18pt)
-    ctx.lineTo(width - triangleSize, height);     // Left from bottom-right (18pt) - 45° diagonal
-  }
+    // For top/bottom edges - single triangle in corner
+    // Triangle size should match the canvas height (which is the strip size in pixels)
+    const triangleSize = height; // Use canvas height for perfect 45° angle
 
-  ctx.closePath();
-  ctx.fill();
+    if (edgeType === 'bottom') {
+      // For bottom edge - cut transparent triangle in top-right corner
+      ctx.moveTo(width, 0);                    // Top-right corner
+      ctx.lineTo(width, triangleSize);         // Down from top-right (71px)
+      ctx.lineTo(width - triangleSize, 0);     // Left from top-right (71px) - 45° diagonal
+    } else {
+      // For top edge - cut transparent triangle in bottom-right corner
+      ctx.moveTo(width, height);                    // Bottom-right corner
+      ctx.lineTo(width, height - triangleSize);     // Up from bottom-right (71px)
+      ctx.lineTo(width - triangleSize, height);     // Left from bottom-right (71px) - 45° diagonal
+    }
+
+    ctx.closePath();
+    ctx.fill();
+  }
 
   // Reset composite operation
   ctx.globalCompositeOperation = 'source-over';
@@ -721,7 +804,7 @@ function applyTriangleMask(
 async function applyTriangleMaskToSlices(
   rawSliceBase64Array: string[],
   edgeType: 'top' | 'bottom',
-  options: EdgeSlicingOptions
+  _options: EdgeSlicingOptions
 ): Promise<string[]> {
   const maskedSlices: string[] = [];
 
@@ -736,7 +819,7 @@ async function applyTriangleMaskToSlices(
 // Apply triangle mask to a single slice image
 async function applyTriangleMaskToSlice(
   rawSliceBase64: string,
-  edgeType: 'top' | 'bottom'
+  edgeType: 'top' | 'bottom' | 'side'
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
