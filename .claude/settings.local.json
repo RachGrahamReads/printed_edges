@@ -28,7 +28,8 @@
       "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions deploy process-pdf-urls)",
       "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions logs process-pdf-urls --limit 10)",
       "Bash(npx supabase:*)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase storage ls --linked --experimental)"
     ],
     "deny": [],
     "ask": []
