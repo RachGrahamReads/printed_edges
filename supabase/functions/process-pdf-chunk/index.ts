@@ -95,6 +95,9 @@ serve(async (req) => {
     // Pre-load all slice images to avoid repeated downloads
     const loadedSlices: any = {};
 
+    // Calculate totalLeaves for top edge reversal using array length
+    const totalLeaves = requestData.sliceStoragePaths.top?.masked.length || Math.ceil((requestData.endPage + 1) / 2);
+
     for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
       const globalPageIndex = requestData.startPage + pageIndex;
       const leafNumber = Math.floor(globalPageIndex / 2);
@@ -155,13 +158,14 @@ serve(async (req) => {
         );
       }
 
-      // Add top edge
+      // Add top edge (access array in reverse order)
+      const topLeafIndex = totalLeaves - 1 - leafNumber;
       if (requestData.edgeType === 'all-edges' &&
-          requestData.sliceStoragePaths.top && requestData.sliceStoragePaths.top.masked[leafNumber]) {
+          requestData.sliceStoragePaths.top && requestData.sliceStoragePaths.top.masked[topLeafIndex]) {
 
         await addEdgeToPage(
           supabase, newPage, processedDoc, loadedSlices,
-          requestData.sliceStoragePaths.top.masked[leafNumber],
+          requestData.sliceStoragePaths.top.masked[topLeafIndex],
           'top', globalPageIndex, newWidth, newHeight, edgeStripWidth, edgeStripHeight
         );
       }

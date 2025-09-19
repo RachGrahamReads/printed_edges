@@ -39,6 +39,48 @@ function pointsToCanvasPixels(points: number, pageType: 'bw' | 'standard' | 'pre
   return pixels;
 }
 
+// Calculate which leaves have actual content vs should be skipped
+function calculateContentRange(
+  samplingRegion: { x: number; y: number; width: number; height: number },
+  numLeaves: number,
+  orientation: 'vertical' | 'horizontal',
+  scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides'
+): { start: number; end: number; effectiveLeaves: number } {
+  // For 'stretch' and 'fill': all leaves have content
+  if (scaleMode === 'stretch' || scaleMode === 'fill') {
+    return { start: 0, end: numLeaves - 1, effectiveLeaves: numLeaves };
+  }
+
+  // For 'extend-sides': calculate fit content range, then extend to fill all leaves
+  if (scaleMode === 'extend-sides') {
+    // Calculate how many leaves would fit within the sampling region (like 'fit' mode)
+    const effectiveLeaves = orientation === 'vertical'
+      ? Math.min(samplingRegion.width, numLeaves)
+      : Math.min(samplingRegion.height, numLeaves);
+
+    // Center the content within the total number of leaves
+    const contentStart = Math.floor((numLeaves - effectiveLeaves) / 2);
+    const contentEnd = contentStart + effectiveLeaves - 1;
+
+    return { start: contentStart, end: contentEnd, effectiveLeaves };
+  }
+
+  // For 'fit' and 'none': calculate actual content range
+  if (orientation === 'vertical') {
+    // For side edges: sampling region width determines content range
+    const effectiveLeaves = Math.min(samplingRegion.width, numLeaves);
+    const start = 0;
+    const end = Math.max(0, effectiveLeaves - 1);
+    return { start, end, effectiveLeaves };
+  } else {
+    // For top/bottom edges: sampling region height determines content range
+    const effectiveLeaves = Math.min(samplingRegion.height, numLeaves);
+    const start = 0;
+    const end = Math.max(0, effectiveLeaves - 1);
+    return { start, end, effectiveLeaves };
+  }
+}
+
 export interface SlicedEdgeImages {
   side?: string[];
   top?: string[];
@@ -66,7 +108,7 @@ export interface EdgeSlicingOptions {
   edgeType: 'side-only' | 'all-edges';
   trimWidth: number;
   trimHeight: number;
-  scaleMode?: 'stretch' | 'fit' | 'fill' | 'none';
+  scaleMode?: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides';
   centerMode?: 'start' | 'center' | 'end';
   pdfDimensions?: { width: number; height: number };
 }
@@ -184,6 +226,124 @@ export async function createRawSlices(
   return rawSlices;
 }
 
+// Create raw slices from pre-scaled images (simplified since scaling is already done)
+async function createRawSlicesFromScaledImages(
+  scaledEdgeImages: {
+    side?: { base64: string };
+    top?: { base64: string };
+    bottom?: { base64: string };
+  },
+  options: EdgeSlicingOptions
+): Promise<SlicedEdgeImages> {
+  const numLeaves = Math.ceil(options.numPages / 2);
+  const rawSlices: SlicedEdgeImages = {};
+
+  if (scaledEdgeImages.side) {
+    rawSlices.side = await createSimplifiedSlices(
+      scaledEdgeImages.side.base64,
+      numLeaves,
+      'vertical',
+      options.pdfDimensions,
+      options.pageType
+    );
+  }
+
+  if (scaledEdgeImages.top) {
+    rawSlices.top = await createSimplifiedSlices(
+      scaledEdgeImages.top.base64,
+      numLeaves,
+      'horizontal',
+      options.pdfDimensions,
+      options.pageType
+    );
+  }
+
+  if (scaledEdgeImages.bottom) {
+    rawSlices.bottom = await createSimplifiedSlices(
+      scaledEdgeImages.bottom.base64,
+      numLeaves,
+      'horizontal',
+      options.pdfDimensions,
+      options.pageType
+    );
+  }
+
+  return rawSlices;
+}
+
+// Simplified slicing function for pre-scaled images
+async function createSimplifiedSlices(
+  scaledBase64: string,
+  numLeaves: number,
+  orientation: 'vertical' | 'horizontal',
+  pdfDimensions?: { width: number; height: number },
+  pageType: 'bw' | 'standard' | 'premium' = 'standard'
+): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const slices: string[] = [];
+
+        // The image is already scaled to the correct dimensions
+        // For vertical: width = numLeaves, height = book height in pixels
+        // For horizontal: width = book width in pixels, height = numLeaves
+
+        for (let leafIndex = 0; leafIndex < numLeaves; leafIndex++) {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d')!;
+          ctx.imageSmoothingEnabled = false;
+
+          // Set canvas size for the final edge strip
+          if (orientation === 'vertical') {
+            // For side edges: edge strip width × full page height
+            canvas.width = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
+            canvas.height = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.height, pageType) : img.height;
+
+            // Extract 1 pixel wide slice from the scaled image
+            const sourceX = Math.min(leafIndex, img.width - 1);
+
+            // Replicate this slice across the edge strip width
+            for (let x = 0; x < canvas.width; x++) {
+              ctx.drawImage(
+                img,
+                sourceX, 0, 1, img.height,  // Source: 1px wide slice
+                x, 0, 1, canvas.height      // Destination: replicate across width
+              );
+            }
+          } else {
+            // For top/bottom edges: full page width × edge strip height
+            canvas.width = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.width, pageType) : img.width;
+            canvas.height = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
+
+            // Extract 1 pixel high slice from the scaled image
+            const sourceY = Math.min(leafIndex, img.height - 1);
+
+            // Replicate this slice across the edge strip height
+            for (let y = 0; y < canvas.height; y++) {
+              ctx.drawImage(
+                img,
+                0, sourceY, img.width, 1,   // Source: 1px high slice
+                0, y, canvas.width, 1       // Destination: replicate across height
+              );
+            }
+          }
+
+          // Convert to base64
+          slices.push(canvas.toDataURL('image/png').split(',')[1]);
+        }
+
+        resolve(slices);
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    img.onerror = () => reject(new Error('Failed to load scaled image for slicing'));
+    img.src = `data:image/png;base64,${scaledBase64}`;
+  });
+}
+
 // NEW: Apply triangle masks to existing slice images
 export async function applyTriangleMasks(
   rawSlices: SlicedEdgeImages,
@@ -208,6 +368,115 @@ export async function applyTriangleMasks(
   return maskedSlices;
 }
 
+// Scale edge image to book dimensions before slicing
+export async function scaleEdgeImageToBookDimensions(
+  base64Image: string,
+  targetDimensions: {
+    width: number;
+    height: number;
+  },
+  scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides'
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+
+        // Set target canvas dimensions
+        canvas.width = targetDimensions.width;
+        canvas.height = targetDimensions.height;
+
+        // Clear canvas with transparent background
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = true;
+
+        let drawX = 0;
+        let drawY = 0;
+        let drawWidth = canvas.width;
+        let drawHeight = canvas.height;
+
+        switch (scaleMode) {
+          case 'stretch':
+            // Stretch to fill entire canvas (current behavior)
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            break;
+
+          case 'fit':
+            // Scale to fit within canvas while maintaining aspect ratio
+            const fitScale = Math.min(canvas.width / img.width, canvas.height / img.height);
+            drawWidth = img.width * fitScale;
+            drawHeight = img.height * fitScale;
+            drawX = (canvas.width - drawWidth) / 2;
+            drawY = (canvas.height - drawHeight) / 2;
+            ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+            break;
+
+          case 'fill':
+            // Scale to fill canvas while maintaining aspect ratio (may crop)
+            const fillScale = Math.max(canvas.width / img.width, canvas.height / img.height);
+            drawWidth = img.width * fillScale;
+            drawHeight = img.height * fillScale;
+            drawX = (canvas.width - drawWidth) / 2;
+            drawY = (canvas.height - drawHeight) / 2;
+            ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+            break;
+
+          case 'none':
+            // Use image at original size, centered
+            drawWidth = Math.min(img.width, canvas.width);
+            drawHeight = Math.min(img.height, canvas.height);
+            drawX = (canvas.width - drawWidth) / 2;
+            drawY = (canvas.height - drawHeight) / 2;
+
+            // Calculate source coordinates to center-crop the original image
+            const sourceX = (img.width - drawWidth) / 2;
+            const sourceY = (img.height - drawHeight) / 2;
+
+            ctx.drawImage(img, sourceX, sourceY, drawWidth, drawHeight, drawX, drawY, drawWidth, drawHeight);
+            break;
+
+          case 'extend-sides':
+            // Apply 'fit' logic first to get centered content
+            const extendFitScale = Math.min(canvas.width / img.width, canvas.height / img.height);
+            const fittedWidth = img.width * extendFitScale;
+            const fittedHeight = img.height * extendFitScale;
+            const fittedX = (canvas.width - fittedWidth) / 2;
+            const fittedY = (canvas.height - fittedHeight) / 2;
+
+            // Draw the fitted content
+            ctx.drawImage(img, fittedX, fittedY, fittedWidth, fittedHeight);
+
+            // Extend edges to fill remaining space
+            if (fittedX > 0) {
+              // Extend left edge
+              ctx.drawImage(img, 0, 0, 1, img.height, 0, fittedY, fittedX, fittedHeight);
+              // Extend right edge
+              ctx.drawImage(img, img.width - 1, 0, 1, img.height, fittedX + fittedWidth, fittedY, canvas.width - fittedX - fittedWidth, fittedHeight);
+            }
+            if (fittedY > 0) {
+              // Extend top edge
+              ctx.drawImage(img, 0, 0, img.width, 1, fittedX, 0, fittedWidth, fittedY);
+              // Extend bottom edge
+              ctx.drawImage(img, 0, img.height - 1, img.width, 1, fittedX, fittedY + fittedHeight, fittedWidth, canvas.height - fittedY - fittedHeight);
+            }
+            break;
+        }
+
+        // Convert to base64
+        const scaledBase64 = canvas.toDataURL('image/png').split(',')[1];
+        resolve(scaledBase64);
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    img.onerror = () => reject(new Error('Failed to load image for scaling'));
+    img.src = `data:image/png;base64,${base64Image}`;
+  });
+}
+
 // NEW: Two-stage processing with Supabase storage integration
 export async function createAndStoreRawSlices(
   edgeImages: {
@@ -222,8 +491,61 @@ export async function createAndStoreRawSlices(
     throw new Error('Supabase client not initialized');
   }
 
-  // First, create raw slices without triangle masks
-  const rawSlices = await createRawSlices(edgeImages, options);
+  // Calculate target dimensions for each edge type
+  const numLeaves = Math.ceil(options.numPages / 2);
+  const edgeDPI = getEdgeImageDPI(options.pageType);
+
+  // Pre-scale images to book dimensions before slicing
+  const scaledEdgeImages: {
+    side?: { base64: string };
+    top?: { base64: string };
+    bottom?: { base64: string };
+  } = {};
+
+  if (edgeImages.side && options.pdfDimensions) {
+    const targetHeight = pointsToCanvasPixels(options.pdfDimensions.height, options.pageType);
+    const targetWidth = numLeaves; // 1 pixel per leaf for slicing
+
+    console.log(`Scaling side edge image to: ${targetWidth} × ${targetHeight}`);
+    scaledEdgeImages.side = {
+      base64: await scaleEdgeImageToBookDimensions(
+        edgeImages.side.base64,
+        { width: targetWidth, height: targetHeight },
+        options.scaleMode || 'fill'
+      )
+    };
+  }
+
+  if (edgeImages.top && options.pdfDimensions) {
+    const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
+    const targetHeight = numLeaves; // 1 pixel per leaf for slicing
+
+    console.log(`Scaling top edge image to: ${targetWidth} × ${targetHeight}`);
+    scaledEdgeImages.top = {
+      base64: await scaleEdgeImageToBookDimensions(
+        edgeImages.top.base64,
+        { width: targetWidth, height: targetHeight },
+        options.scaleMode || 'fill'
+      )
+    };
+  }
+
+  if (edgeImages.bottom && options.pdfDimensions) {
+    const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
+    const targetHeight = numLeaves; // 1 pixel per leaf for slicing
+
+    console.log(`Scaling bottom edge image to: ${targetWidth} × ${targetHeight}`);
+    scaledEdgeImages.bottom = {
+      base64: await scaleEdgeImageToBookDimensions(
+        edgeImages.bottom.base64,
+        { width: targetWidth, height: targetHeight },
+        options.scaleMode || 'fill'
+      )
+    };
+  }
+
+  // Create raw slices from pre-scaled images (no scale mode needed now)
+  const rawSlices = await createRawSlicesFromScaledImages(scaledEdgeImages, options);
 
   // Upload raw slices to storage and track paths
   const storagePaths: SliceStoragePaths = {};
@@ -413,7 +735,7 @@ async function createRawSliceImage(
   base64: string,
   numLeaves: number,
   orientation: 'vertical' | 'horizontal',
-  scaleMode: 'stretch' | 'fit' | 'fill' | 'none',
+  scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides',
   centerMode: 'start' | 'center' | 'end',
   pdfDimensions?: { width: number; height: number },
   pageType: 'bw' | 'standard' | 'premium' = 'standard'
@@ -464,9 +786,38 @@ async function createRawSliceImage(
         // Calculate sampling region
         const samplingRegion = calculateSamplingRegion(img, numLeaves, orientation, scaleMode, centerMode);
 
+        // Calculate content range to determine which leaves actually have content
+        const contentRange = calculateContentRange(samplingRegion, numLeaves, orientation, scaleMode);
+
         // Create raw slices (no triangle masks)
         for (let leafIndex = 0; leafIndex < numLeaves; leafIndex++) {
-          const leafPosition = leafIndex / Math.max(1, numLeaves - 1);
+          // Skip leaves outside content range for 'fit' and 'none' modes
+          if ((scaleMode === 'fit' || scaleMode === 'none') &&
+              (leafIndex < contentRange.start || leafIndex > contentRange.end)) {
+            // Add empty string to maintain array indexing
+            slices.push('');
+            continue;
+          }
+          // Calculate leaf position with special handling for extend-sides mode
+          let leafPosition;
+          if (scaleMode === 'extend-sides') {
+            // For extend-sides: map content leaves within sampling region, extend edges to fill
+            if (leafIndex < contentRange.start) {
+              // Before content: use first pixel (0.0) of the sampling region
+              leafPosition = 0.0;
+            } else if (leafIndex > contentRange.end) {
+              // After content: use last pixel (1.0) of the sampling region
+              leafPosition = 1.0;
+            } else {
+              // Within content: map proportionally within the sampling region
+              const contentLeafIndex = leafIndex - contentRange.start;
+              const totalContentLeaves = contentRange.effectiveLeaves;
+              leafPosition = totalContentLeaves > 1 ? contentLeafIndex / (totalContentLeaves - 1) : 0.5;
+            }
+          } else {
+            // Standard behavior for other modes
+            leafPosition = leafIndex / Math.max(1, numLeaves - 1);
+          }
 
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d')!;
@@ -532,7 +883,7 @@ async function sliceImage(
   base64: string,
   numLeaves: number,
   orientation: 'vertical' | 'horizontal',
-  scaleMode: 'stretch' | 'fit' | 'fill' | 'none',
+  scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides',
   centerMode: 'start' | 'center' | 'end',
   edgeType?: 'top' | 'bottom',
   pdfDimensions?: { width: number; height: number },
@@ -590,11 +941,40 @@ async function sliceImage(
         // Calculate sampling region based on scale and center modes
         const samplingRegion = calculateSamplingRegion(img, numLeaves, orientation, scaleMode, centerMode);
 
+        // Calculate content range to determine which leaves actually have content
+        const contentRange = calculateContentRange(samplingRegion, numLeaves, orientation, scaleMode);
+
         // For each leaf, calculate which portion of the image to use
         // Base pixel requirements directly on number of leaves
         for (let leafIndex = 0; leafIndex < numLeaves; leafIndex++) {
+          // Skip leaves outside content range for 'fit' and 'none' modes
+          if ((scaleMode === 'fit' || scaleMode === 'none') &&
+              (leafIndex < contentRange.start || leafIndex > contentRange.end)) {
+            // Add empty string to maintain array indexing
+            slices.push('');
+            continue;
+          }
           // Calculate the position of this leaf in the sampling region (0 to 1)
-          const leafPosition = leafIndex / Math.max(1, numLeaves - 1);
+          // Calculate leaf position with special handling for extend-sides mode
+          let leafPosition;
+          if (scaleMode === 'extend-sides') {
+            // For extend-sides: map content leaves within sampling region, extend edges to fill
+            if (leafIndex < contentRange.start) {
+              // Before content: use first pixel (0.0) of the sampling region
+              leafPosition = 0.0;
+            } else if (leafIndex > contentRange.end) {
+              // After content: use last pixel (1.0) of the sampling region
+              leafPosition = 1.0;
+            } else {
+              // Within content: map proportionally within the sampling region
+              const contentLeafIndex = leafIndex - contentRange.start;
+              const totalContentLeaves = contentRange.effectiveLeaves;
+              leafPosition = totalContentLeaves > 1 ? contentLeafIndex / (totalContentLeaves - 1) : 0.5;
+            }
+          } else {
+            // Standard behavior for other modes
+            leafPosition = leafIndex / Math.max(1, numLeaves - 1);
+          }
 
           // Create a canvas for this slice
           const canvas = document.createElement('canvas');
@@ -664,7 +1044,7 @@ function calculateSamplingRegion(
   img: HTMLImageElement,
   numLeaves: number,
   orientation: 'vertical' | 'horizontal',
-  scaleMode: 'stretch' | 'fit' | 'fill' | 'none',
+  scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides',
   centerMode: 'start' | 'center' | 'end'
 ): { x: number; y: number; width: number; height: number } {
   const imgWidth = img.width;
@@ -740,6 +1120,20 @@ function calculateSamplingRegion(
     }
   }
 
+  if (scaleMode === 'extend-sides') {
+    // Use 'fit' logic first to determine content area that will be extended
+    if (orientation === 'vertical') {
+      const scale = Math.min(1, numLeaves / imgWidth);
+      const fittedWidth = Math.floor(imgWidth * scale);
+      const startX = Math.floor((imgWidth - fittedWidth) / 2);
+      return { x: startX, y: 0, width: fittedWidth, height: imgHeight };
+    } else {
+      const scale = Math.min(1, numLeaves / imgHeight);
+      const fittedHeight = Math.floor(imgHeight * scale);
+      const startY = Math.floor((imgHeight - fittedHeight) / 2);
+      return { x: 0, y: startY, width: imgWidth, height: fittedHeight };
+    }
+  }
   // Default fallback
   return { x: 0, y: 0, width: imgWidth, height: imgHeight };
 }

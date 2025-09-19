@@ -24,7 +24,7 @@ export async function processPDFWithChunking(
     edgeType: 'side-only' | 'all-edges';
     trimWidth: number;
     trimHeight: number;
-    scaleMode?: 'stretch' | 'fit' | 'fill' | 'none';
+    scaleMode?: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides';
   },
   onProgress?: (progress: number) => void
 ) {

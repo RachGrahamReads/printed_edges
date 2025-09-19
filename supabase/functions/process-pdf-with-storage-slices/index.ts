@@ -153,6 +153,9 @@ serve(async (req) => {
       // Calculate which leaf this page belongs to
       const leafNumber = Math.floor(pageNum / 2);
 
+      // Calculate totalLeaves for top edge reversal using array length
+      const totalLeaves = requestData.sliceStoragePaths.top?.masked.length || Math.ceil(pages.length / 2);
+
       // Create new page with bleed dimensions
       const newPage = newPdfDoc.addPage([newWidth, newHeight]);
 
@@ -261,12 +264,13 @@ serve(async (req) => {
 
       // Add top/bottom edges with storage-based sliced images (always processed)
       {
-        // Top edge
-        if (requestData.sliceStoragePaths.top && requestData.sliceStoragePaths.top.masked[leafNumber]) {
+        // Top edge (access array in reverse order)
+        const topLeafIndex = totalLeaves - 1 - leafNumber;
+        if (requestData.sliceStoragePaths.top && requestData.sliceStoragePaths.top.masked[topLeafIndex]) {
           try {
-            const slicePath = requestData.sliceStoragePaths.top.masked[leafNumber];
+            const slicePath = requestData.sliceStoragePaths.top.masked[topLeafIndex];
             const flipHorizontally = pageNum % 2 !== 0; // Left pages are flipped
-            const cacheKey = `top_${leafNumber}_${flipHorizontally}`;
+            const cacheKey = `top_${topLeafIndex}_${flipHorizontally}`;
 
             if (!embeddedSlices[cacheKey]) {
               console.log(`Loading top slice from storage: ${slicePath}`);
@@ -305,7 +309,7 @@ serve(async (req) => {
               });
             }
 
-            console.log(`Added storage-based top edge image (leaf ${leafNumber}) to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
+            console.log(`Added storage-based top edge image (leaf ${leafNumber}, slice ${topLeafIndex}) to page ${pageNum + 1} (${flipHorizontally ? 'flipped' : 'normal'})`);
           } catch (error) {
             console.error(`Failed to add top edge to page ${pageNum + 1}:`, error.message);
             newPage.drawRectangle({

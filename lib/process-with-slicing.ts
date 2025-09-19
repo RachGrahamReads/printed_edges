@@ -22,7 +22,7 @@ export async function processPDFWithSlicing(
     edgeType: 'side-only' | 'all-edges';
     trimWidth: number;
     trimHeight: number;
-    scaleMode?: 'stretch' | 'fit' | 'fill' | 'none';
+    scaleMode?: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides';
   }
 ) {
   if (!supabase) {

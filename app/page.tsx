@@ -8,15 +8,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { processPDFWithChunking } from '@/lib/process-with-chunking';
+import JSZip from 'jszip';
 
 export default function Home() {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [sideEdgeImage, setSideEdgeImage] = useState<string | null>(null);
+  const [sideEdgeImageFile, setSideEdgeImageFile] = useState<File | null>(null);
   const [selectedPdf, setSelectedPdf] = useState<File | null>(null);
   const edgeType = "all-edges"; // Always use all-edges mode with mitred corners
-  const [scaleMode, setScaleMode] = useState<'stretch' | 'fit' | 'fill' | 'none'>('fill');
+  const [scaleMode, setScaleMode] = useState<'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides'>('fill');
   const [showScaleModeInfo, setShowScaleModeInfo] = useState(false);
   const scaleModeInfoRef = useRef<HTMLDivElement>(null);
+  const topEdgeCanvasRef = useRef<HTMLCanvasElement>(null);
+  const sideEdgeCanvasRef = useRef<HTMLCanvasElement>(null);
+  const bottomEdgeCanvasRef = useRef<HTMLCanvasElement>(null);
   const [topEdgeImage, setTopEdgeImage] = useState<string | null>(null);
   const [topEdgeImageFile, setTopEdgeImageFile] = useState<File | null>(null);
   const [bottomEdgeImage, setBottomEdgeImage] = useState<string | null>(null);
@@ -37,14 +41,175 @@ export default function Home() {
 
   const numLeaves = Math.ceil(totalPages / 2);
 
+  // Edge preview rendering function
+  const renderEdgePreview = useCallback((
+    imageUrl: string,
+    edgeType: 'side' | 'top' | 'bottom',
+    canvasRef: React.RefObject<HTMLCanvasElement | null>
+  ) => {
+    // Use requestAnimationFrame for better timing
+    requestAnimationFrame(() => {
+      if (!canvasRef.current) return;
+
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      try {
+        // Set proportional canvas dimensions based on book dimensions and page count first
+        if (edgeType === 'side') {
+          // Side edge: height proportional to book dimensions, variable width based on page count
+          canvas.height = (bookHeight / bookWidth) * 300;
+          const actualRatio = numLeaves / (bookHeight * 285.7);
+          canvas.width = Math.max(actualRatio * canvas.height, 20); // minimum 20px width
+        } else {
+          // Top/bottom edge: fixed width, variable height based on page count ratio
+          canvas.width = 300;
+          const actualRatio = numLeaves / (bookWidth * 285.7);
+          canvas.height = Math.max(actualRatio * 300, 20); // minimum 20px height
+        }
+
+        // Clear canvas and show loading state
+        ctx.fillStyle = '#f8f9fa';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Show loading text
+        ctx.fillStyle = '#6b7280';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Loading...', canvas.width / 2, canvas.height / 2);
+
+        const img = new Image();
+
+        img.onload = () => {
+          try {
+            // Clear canvas again
+            ctx.fillStyle = '#f8f9fa';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Apply scale mode logic
+            let drawWidth, drawHeight, drawX, drawY;
+
+            switch (scaleMode) {
+              case 'stretch':
+                // Stretch to fill entire canvas
+                drawWidth = canvas.width;
+                drawHeight = canvas.height;
+                drawX = 0;
+                drawY = 0;
+                break;
+
+              case 'fill':
+                // Scale to fill while maintaining aspect ratio (may crop)
+                const fillScale = Math.max(canvas.width / img.width, canvas.height / img.height);
+                drawWidth = img.width * fillScale;
+                drawHeight = img.height * fillScale;
+                drawX = (canvas.width - drawWidth) / 2;
+                drawY = (canvas.height - drawHeight) / 2;
+                break;
+
+              case 'fit':
+                // Scale to fit while maintaining aspect ratio (may have empty space)
+                const fitScale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                drawWidth = img.width * fitScale;
+                drawHeight = img.height * fitScale;
+                drawX = (canvas.width - drawWidth) / 2;
+                drawY = (canvas.height - drawHeight) / 2;
+                break;
+
+              case 'none':
+                // Show image size relative to actual book edge dimensions
+                // Calculate actual book edge dimensions at 285.7 DPI
+                const actualEdgeWidth = edgeType === 'side' ?
+                  numLeaves :
+                  Math.round(bookWidth * 285.7);
+                const actualEdgeHeight = edgeType === 'side' ?
+                  Math.round(bookHeight * 285.7) :
+                  numLeaves;
+
+                // Calculate what portion of the actual edge the image covers
+                const imageToEdgeRatioX = img.width / actualEdgeWidth;
+                const imageToEdgeRatioY = img.height / actualEdgeHeight;
+
+                // Apply that ratio to our canvas
+                drawWidth = imageToEdgeRatioX * canvas.width;
+                drawHeight = imageToEdgeRatioY * canvas.height;
+                drawX = (canvas.width - drawWidth) / 2;
+                drawY = (canvas.height - drawHeight) / 2;
+                break;
+
+              case 'extend-sides':
+                // Apply 'fit' logic first to get centered content
+                const extendFitScale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                const fittedWidth = img.width * extendFitScale;
+                const fittedHeight = img.height * extendFitScale;
+                const fittedX = (canvas.width - fittedWidth) / 2;
+                const fittedY = (canvas.height - fittedHeight) / 2;
+
+                // Draw the fitted content
+                ctx.drawImage(img, fittedX, fittedY, fittedWidth, fittedHeight);
+
+                // Extend edges to fill remaining space
+                if (fittedX > 0) {
+                  // Extend left edge
+                  ctx.drawImage(img, 0, 0, 1, img.height, 0, fittedY, fittedX, fittedHeight);
+                  // Extend right edge
+                  ctx.drawImage(img, img.width - 1, 0, 1, img.height, fittedX + fittedWidth, fittedY, canvas.width - fittedX - fittedWidth, fittedHeight);
+                }
+                if (fittedY > 0) {
+                  // Extend top edge
+                  ctx.drawImage(img, 0, 0, img.width, 1, 0, 0, canvas.width, fittedY);
+                  // Extend bottom edge
+                  ctx.drawImage(img, 0, img.height - 1, img.width, 1, 0, fittedY + fittedHeight, canvas.width, canvas.height - fittedY - fittedHeight);
+                }
+                return; // Skip the main drawImage call below
+
+              default:
+                drawWidth = canvas.width;
+                drawHeight = canvas.height;
+                drawX = 0;
+                drawY = 0;
+            }
+
+            // Draw the image (except for extend-sides which handles its own drawing)
+            ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+          } catch (error) {
+            console.error('Error drawing image to canvas:', error);
+            // Show error state
+            ctx.fillStyle = '#f8f9fa';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ef4444';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Error loading image', canvas.width / 2, canvas.height / 2);
+          }
+        };
+
+        img.onerror = () => {
+          console.error('Failed to load image:', imageUrl);
+          // Show error state
+          ctx.fillStyle = '#f8f9fa';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#ef4444';
+          ctx.font = '12px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('Failed to load image', canvas.width / 2, canvas.height / 2);
+        };
+
+        img.src = imageUrl;
+      } catch (error) {
+        console.error('Error in renderEdgePreview:', error);
+      }
+    });
+  }, [scaleMode, numLeaves, bookWidth, bookHeight, bleedType]);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setSelectedImageFile(file);
+      setSideEdgeImageFile(file);
       const reader = new FileReader();
       reader.onload = (e) => {
-        setSelectedImage(e.target?.result as string);
+        setSideEdgeImage(e.target?.result as string);
         setShowPreview(false); // Reset preview when new image is uploaded
       };
       reader.readAsDataURL(file);
@@ -196,11 +361,30 @@ export default function Home() {
     }
   }, [showScaleModeInfo]);
 
+  // Update edge previews when images or scale mode changes
+  useEffect(() => {
+    if (topEdgeImage && numLeaves > 0) {
+      renderEdgePreview(topEdgeImage, 'top', topEdgeCanvasRef);
+    }
+  }, [topEdgeImage, scaleMode, numLeaves, bookWidth, bookHeight, bleedType, showPreview, viewMode, renderEdgePreview]);
+
+  useEffect(() => {
+    if (sideEdgeImage && numLeaves > 0) {
+      renderEdgePreview(sideEdgeImage, 'side', sideEdgeCanvasRef);
+    }
+  }, [sideEdgeImage, scaleMode, numLeaves, bookWidth, bookHeight, bleedType, showPreview, viewMode, renderEdgePreview]);
+
+  useEffect(() => {
+    if (bottomEdgeImage && numLeaves > 0) {
+      renderEdgePreview(bottomEdgeImage, 'bottom', bottomEdgeCanvasRef);
+    }
+  }, [bottomEdgeImage, scaleMode, numLeaves, bookWidth, bookHeight, bleedType, showPreview, viewMode, renderEdgePreview]);
+
   const processActualPdf = async () => {
     if (!selectedPdf) return;
 
     // Validate that at least one edge image is uploaded
-    if (!topEdgeImageFile && !selectedImageFile && !bottomEdgeImageFile) {
+    if (!topEdgeImageFile && !sideEdgeImageFile && !bottomEdgeImageFile) {
       alert('Please upload at least one edge image (top, side, or bottom)');
       return;
     }
@@ -212,7 +396,7 @@ export default function Home() {
       // Prepare edge files (always all-edges mode)
       const edgeFiles: any = {};
       if (topEdgeImageFile) edgeFiles.top = topEdgeImageFile;
-      if (selectedImageFile) edgeFiles.side = selectedImageFile;
+      if (sideEdgeImageFile) edgeFiles.side = sideEdgeImageFile;
       if (bottomEdgeImageFile) edgeFiles.bottom = bottomEdgeImageFile;
 
       // Use chunking workflow for all PDFs (now with storage-based slicing)
@@ -248,124 +432,480 @@ export default function Home() {
     setViewMode("2page"); // Default to 2-page layout
   };
 
-  // Helper function to calculate background styles based on scale mode
-  // This simulates the 1px slicing behavior - each LEAF gets a 1px slice from the image
-  const getEdgeBackgroundStyle = (
+  // Preview helper functions that match the real PDF processing logic
+  const calculatePreviewSamplingRegion = useCallback((
+    imgWidth: number,
+    imgHeight: number,
+    numLeaves: number,
+    orientation: 'vertical' | 'horizontal',
+    scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides',
+    centerMode: 'start' | 'center' | 'end' = 'center'
+  ) => {
+    if (scaleMode === 'stretch') {
+      // Use entire image, stretched to fit
+      return { x: 0, y: 0, width: imgWidth, height: imgHeight };
+    }
+
+    if (scaleMode === 'none') {
+      // Use image as-is, just apply centering
+      if (orientation === 'vertical') {
+        const startX = centerMode === 'start' ? 0 :
+                      centerMode === 'end' ? Math.max(0, imgWidth - numLeaves) :
+                      Math.max(0, Math.floor((imgWidth - numLeaves) / 2));
+        return {
+          x: startX,
+          y: 0,
+          width: Math.min(numLeaves, imgWidth),
+          height: imgHeight
+        };
+      } else {
+        const startY = centerMode === 'start' ? 0 :
+                      centerMode === 'end' ? Math.max(0, imgHeight - numLeaves) :
+                      Math.max(0, Math.floor((imgHeight - numLeaves) / 2));
+        return {
+          x: 0,
+          y: startY,
+          width: imgWidth,
+          height: Math.min(numLeaves, imgHeight)
+        };
+      }
+    }
+
+    if (scaleMode === 'fit') {
+      // Scale to fit within required dimensions while maintaining aspect ratio
+      if (orientation === 'vertical') {
+        // For side edges: scale to fit within both numLeaves width AND imgHeight constraint
+        const scaleX = numLeaves / imgWidth;
+        const scaleY = 1; // No height constraint for side edges typically
+        const scale = Math.min(scaleX, scaleY, 1); // Don't upscale
+
+        const fittedWidth = imgWidth * scale;
+        const fittedHeight = imgHeight * scale;
+
+        // Center the fitted content
+        const startX = Math.max(0, Math.floor((imgWidth - fittedWidth) / 2));
+        const startY = Math.max(0, Math.floor((imgHeight - fittedHeight) / 2));
+
+        return { x: startX, y: startY, width: fittedWidth, height: fittedHeight };
+      } else {
+        // For top/bottom edges: scale to fit within both imgWidth AND numLeaves height constraint
+        const scaleX = 1; // No width constraint for top/bottom edges typically
+        const scaleY = numLeaves / imgHeight;
+        const scale = Math.min(scaleX, scaleY, 1); // Don't upscale
+
+        const fittedWidth = imgWidth * scale;
+        const fittedHeight = imgHeight * scale;
+
+        // Center the fitted content
+        const startX = Math.max(0, Math.floor((imgWidth - fittedWidth) / 2));
+        const startY = Math.max(0, Math.floor((imgHeight - fittedHeight) / 2));
+
+        return { x: startX, y: startY, width: fittedWidth, height: fittedHeight };
+      }
+    }
+
+    // 'fill' mode: scale to fill exactly, maintaining aspect ratio (may crop)
+    if (scaleMode === 'fill') {
+      if (orientation === 'vertical') {
+        // For side edges: scale to fill numLeaves width, may crop height
+        const scaleToFillWidth = numLeaves / imgWidth;
+        const scaledHeight = imgHeight * scaleToFillWidth;
+
+        // Center vertically if scaled height is larger than available
+        const startY = scaledHeight > imgHeight ?
+          Math.floor((scaledHeight - imgHeight) / 2) : 0;
+
+        return { x: 0, y: startY, width: numLeaves, height: imgHeight };
+      } else {
+        // For top/bottom edges: scale to fill numLeaves height, may crop width
+        const scaleToFillHeight = numLeaves / imgHeight;
+        const scaledWidth = imgWidth * scaleToFillHeight;
+
+        // Center horizontally if scaled width is larger than available
+        const startX = scaledWidth > imgWidth ?
+          Math.floor((scaledWidth - imgWidth) / 2) : 0;
+
+        return { x: startX, y: 0, width: imgWidth, height: numLeaves };
+      }
+    }
+
+    // 'extend-sides' mode: like fit, but will extend edges to fill gaps
+    if (orientation === 'vertical') {
+      // Use fit logic for the core content
+      const scaleX = numLeaves / imgWidth;
+      const scale = Math.min(scaleX, 1);
+      const fittedWidth = imgWidth * scale;
+
+      // Center the fitted content
+      const startX = Math.max(0, Math.floor((imgWidth - fittedWidth) / 2));
+
+      return { x: startX, y: 0, width: fittedWidth, height: imgHeight };
+    } else {
+      // Use fit logic for the core content
+      const scaleY = numLeaves / imgHeight;
+      const scale = Math.min(scaleY, 1);
+      const fittedHeight = imgHeight * scale;
+
+      // Center the fitted content
+      const startY = Math.max(0, Math.floor((imgHeight - fittedHeight) / 2));
+
+      return { x: 0, y: startY, width: imgWidth, height: fittedHeight };
+    }
+  }, []);
+
+  const calculatePreviewContentRange = useCallback((
+    samplingRegion: { x: number; y: number; width: number; height: number },
+    numLeaves: number,
+    orientation: 'vertical' | 'horizontal',
+    scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides'
+  ) => {
+    // For 'stretch' and 'fill': all leaves have content
+    if (scaleMode === 'stretch' || scaleMode === 'fill') {
+      return { start: 0, end: numLeaves - 1, effectiveLeaves: numLeaves };
+    }
+
+    // For 'extend-sides': calculate fit content range, then extend to fill all leaves
+    if (scaleMode === 'extend-sides') {
+      // Calculate how many leaves would fit within the sampling region (like 'fit' mode)
+      const effectiveLeaves = orientation === 'vertical'
+        ? Math.min(samplingRegion.width, numLeaves)
+        : Math.min(samplingRegion.height, numLeaves);
+
+      // Center the content within the total number of leaves
+      const contentStart = Math.floor((numLeaves - effectiveLeaves) / 2);
+      const contentEnd = contentStart + effectiveLeaves - 1;
+
+      return { start: contentStart, end: contentEnd, effectiveLeaves };
+    }
+
+    // For 'fit' and 'none': calculate actual content range
+    if (orientation === 'vertical') {
+      // For side edges: calculate how many leaves the fitted image actually covers
+      // samplingRegion.width is the fitted image width in pixels
+      // numLeaves is the total leaves needed (1 pixel per leaf in ideal case)
+      const effectiveLeaves = Math.min(Math.floor(samplingRegion.width), numLeaves);
+
+      // Center the content within available leaves
+      const contentStart = Math.floor((numLeaves - effectiveLeaves) / 2);
+      const contentEnd = contentStart + effectiveLeaves - 1;
+
+      return { start: contentStart, end: Math.max(contentStart, contentEnd), effectiveLeaves };
+    } else {
+      // For top/bottom edges: calculate how many leaves the fitted image actually covers
+      // samplingRegion.height is the fitted image height in pixels
+      // numLeaves is the total leaves needed (1 pixel per leaf in ideal case)
+      const effectiveLeaves = Math.min(Math.floor(samplingRegion.height), numLeaves);
+
+      // Center the content within available leaves
+      const contentStart = Math.floor((numLeaves - effectiveLeaves) / 2);
+      const contentEnd = contentStart + effectiveLeaves - 1;
+
+      return { start: contentStart, end: Math.max(contentStart, contentEnd), effectiveLeaves };
+    }
+  }, []);
+
+  const calculatePreviewLeafPosition = useCallback((
+    leafIndex: number,
+    numLeaves: number,
+    contentRange: { start: number; end: number; effectiveLeaves: number },
+    scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides'
+  ) => {
+    if (scaleMode === 'extend-sides') {
+      // For extend-sides: map content leaves within sampling region, extend edges to fill
+      if (leafIndex < contentRange.start) {
+        // Before content: use first pixel (0.0) of the sampling region
+        return 0.0;
+      } else if (leafIndex > contentRange.end) {
+        // After content: use last pixel (1.0) of the sampling region
+        return 1.0;
+      } else {
+        // Within content: map proportionally within the sampling region
+        const contentLeafIndex = leafIndex - contentRange.start;
+        const totalContentLeaves = contentRange.effectiveLeaves;
+        return totalContentLeaves > 1 ? contentLeafIndex / (totalContentLeaves - 1) : 0.5;
+      }
+    } else {
+      // Standard behavior for other modes
+      return leafIndex / Math.max(1, numLeaves - 1);
+    }
+  }, []);
+
+  // Helper function that simulates 1px slice extraction for preview
+  const getEdgeBackgroundStyle = useCallback((
     edgeType: 'side' | 'top' | 'bottom',
     imageUrl: string,
     pageIndex: number,
     stripWidth: number,
     stripHeight: number
   ) => {
-    // For 1px slicing: we extract a 1px slice based on leaf position
-    // and then tile/stretch it according to the scale mode
-
-    const baseStyles: React.CSSProperties = {};
-
     // Calculate which leaf this page belongs to (2 pages per leaf)
     const leafIndex = Math.floor(pageIndex / 2);
 
-    // The image should be sized to match our requirements
-    const expectedImageWidth = edgeType === 'side' ?
-      numLeaves : // For side edges, width should be numLeaves pixels (1px per leaf)
-      ((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 285.7); // For top/bottom
+    // Simulate realistic image dimensions that differ from "perfect" requirements
+    // This allows scale modes to show different behaviors
+    const actualImageWidth = edgeType === 'side' ?
+      Math.max(numLeaves * 1.5, 100) : // Side image wider than needed (common scenario)
+      ((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * 285.7 * 1.2); // Top/bottom wider than needed
 
-    const expectedImageHeight = edgeType === 'side' ?
-      ((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 285.7) : // For side edges
-      numLeaves; // For top/bottom edges, height should be numLeaves pixels (1px per leaf)
+    const actualImageHeight = edgeType === 'side' ?
+      ((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 285.7 * 0.8) : // Side image shorter than ideal
+      Math.max(numLeaves * 1.8, 80); // Top/bottom taller than needed
 
-    // All scale modes still use 1px slicing, but differ in how they display that pixel
+    const orientation = edgeType === 'side' ? 'vertical' : 'horizontal';
+
+    // Calculate sampling region - what part of the actual image we use
+    const samplingRegion = calculatePreviewSamplingRegion(
+      actualImageWidth,
+      actualImageHeight,
+      numLeaves,
+      orientation,
+      scaleMode
+    );
+
+    // Calculate content range - which leaves have content vs empty
+    const contentRange = calculatePreviewContentRange(
+      samplingRegion,
+      numLeaves,
+      orientation,
+      scaleMode
+    );
+
+    // Check if this leaf is outside content range (for fit/none modes)
+    if ((scaleMode === 'fit' || scaleMode === 'none') &&
+        (leafIndex < contentRange.start || leafIndex > contentRange.end)) {
+      // Return empty/transparent style for leaves outside content range
+      return {
+        backgroundColor: 'transparent',
+        backgroundImage: 'none'
+      };
+    }
+
+    // Calculate leaf position within the sampling region
+    const leafPosition = calculatePreviewLeafPosition(
+      leafIndex,
+      numLeaves,
+      contentRange,
+      scaleMode
+    );
+
+    const baseStyles: React.CSSProperties = {
+      backgroundImage: `url(${imageUrl})`
+    };
+
     if (edgeType === 'side') {
-      // For side edges: extract a 1px vertical slice and tile it horizontally
+      // For side edges: extract 1px vertical slice and tile horizontally
 
-      // Create a CSS gradient to simulate the 1px slice being repeated
-      // We'll use background-size and position to extract just the 1px slice
-      baseStyles.backgroundImage = `url(${imageUrl})`;
+      // Calculate the exact pixel position within the sampling region
+      const slicePixelX = samplingRegion.x + (leafPosition * samplingRegion.width);
 
-      switch (scaleMode) {
-        case 'fill':
-          // Tile the 1px slice across the entire width (default behavior)
-          // Scale the image so each leaf gets exactly stripWidth pixels
-          baseStyles.backgroundSize = `${numLeaves * stripWidth}px 100%`;
-          baseStyles.backgroundPosition = `${-(leafIndex * stripWidth)}px center`;
-          baseStyles.backgroundRepeat = 'repeat-x';
-          // Don't set backgroundColor - let page background show through
-          break;
+      // Scale the image to a reasonable size that allows pixel-level precision
+      // We want each pixel in the image to be distinguishable in the preview
+      const pixelScale = Math.max(2, stripWidth / 4); // Make each image pixel at least 2-4 preview pixels wide
+      const scaledImageWidth = actualImageWidth * pixelScale;
+      const backgroundPosX = -(slicePixelX * pixelScale);
 
-        case 'stretch':
-          // Stretch the 1px slice to fill the entire strip
-          baseStyles.backgroundSize = `${numLeaves * stripWidth}px 100%`;
-          baseStyles.backgroundPosition = `${-(leafIndex * stripWidth)}px center`;
-          baseStyles.backgroundRepeat = 'no-repeat';
-          // Don't set backgroundColor - let page background show through
-          break;
+      baseStyles.backgroundSize = `${scaledImageWidth}px ${stripHeight}px`;
+      baseStyles.backgroundPosition = `${backgroundPosX}px center`;
+      baseStyles.backgroundRepeat = 'repeat-x'; // Tile the 1px slice horizontally
 
-        case 'fit':
-          // Show the 1px slice at its natural height, centered
-          const naturalHeight = expectedImageHeight;
-          const scaleRatio = Math.min(stripHeight / naturalHeight, 1);
-          baseStyles.backgroundSize = `${numLeaves * stripWidth}px ${naturalHeight * scaleRatio}px`;
-          baseStyles.backgroundPosition = `${-(leafIndex * stripWidth)}px center`;
-          baseStyles.backgroundRepeat = 'repeat-x';
-          // Don't set backgroundColor - let page background show through
-          break;
-
-        case 'none':
-          // Show the 1px slice at actual size
-          baseStyles.backgroundSize = `${numLeaves * stripWidth}px ${expectedImageHeight}px`;
-          baseStyles.backgroundPosition = `${-(leafIndex * stripWidth)}px center`;
-          baseStyles.backgroundRepeat = 'repeat-x';
-          // Don't set backgroundColor - let page background show through
-          break;
+      // Special handling for extend-sides mode
+      if (scaleMode === 'extend-sides' &&
+          (leafIndex < contentRange.start || leafIndex > contentRange.end)) {
+        // Use edge pixels for extend-sides
+        const edgePixelX = leafIndex < contentRange.start ?
+          samplingRegion.x :
+          samplingRegion.x + samplingRegion.width - 1;
+        const edgeBackgroundPosX = -(edgePixelX * pixelScale);
+        baseStyles.backgroundPosition = `${edgeBackgroundPosX}px center`;
       }
     } else {
-      // For top/bottom edges: extract a 1px horizontal slice and tile it vertically
-      baseStyles.backgroundImage = `url(${imageUrl})`;
+      // For top/bottom edges: extract 1px horizontal slice and tile vertically
 
-      switch (scaleMode) {
-        case 'fill':
-          // Tile the 1px slice across the entire height (default behavior)
-          baseStyles.backgroundSize = `100% ${numLeaves * stripHeight}px`;
-          baseStyles.backgroundPosition = `center ${-(leafIndex * stripHeight)}px`;
-          baseStyles.backgroundRepeat = 'repeat-y';
-          // Don't set backgroundColor - let page background show through
-          break;
+      // Calculate the exact pixel position within the sampling region
+      const slicePixelY = samplingRegion.y + (leafPosition * samplingRegion.height);
 
-        case 'stretch':
-          // Stretch the 1px slice to fill the entire strip
-          baseStyles.backgroundSize = `100% ${numLeaves * stripHeight}px`;
-          baseStyles.backgroundPosition = `center ${-(leafIndex * stripHeight)}px`;
-          baseStyles.backgroundRepeat = 'no-repeat';
-          // Don't set backgroundColor - let page background show through
-          break;
+      // Scale the image to a reasonable size that allows pixel-level precision
+      // We want each pixel in the image to be distinguishable in the preview
+      const pixelScale = Math.max(2, stripHeight / 4); // Make each image pixel at least 2-4 preview pixels tall
+      const scaledImageHeight = actualImageHeight * pixelScale;
+      const backgroundPosY = -(slicePixelY * pixelScale);
 
-        case 'fit':
-          // Show the 1px slice at its natural width, centered
-          const naturalWidth = expectedImageWidth;
-          const scaleRatio = Math.min(stripWidth / naturalWidth, 1);
-          baseStyles.backgroundSize = `${naturalWidth * scaleRatio}px ${numLeaves * stripHeight}px`;
-          baseStyles.backgroundPosition = `center ${-(leafIndex * stripHeight)}px`;
-          baseStyles.backgroundRepeat = 'repeat-y';
-          // Don't set backgroundColor - let page background show through
-          break;
+      baseStyles.backgroundSize = `${stripWidth}px ${scaledImageHeight}px`;
+      baseStyles.backgroundPosition = `center ${backgroundPosY}px`;
+      baseStyles.backgroundRepeat = 'repeat-y'; // Tile the 1px slice vertically
 
-        case 'none':
-          // Show the 1px slice at actual size
-          baseStyles.backgroundSize = `${expectedImageWidth}px ${numLeaves * stripHeight}px`;
-          baseStyles.backgroundPosition = `center ${-(leafIndex * stripHeight)}px`;
-          baseStyles.backgroundRepeat = 'repeat-y';
-          // Don't set backgroundColor - let page background show through
-          break;
+      // Special handling for extend-sides mode
+      if (scaleMode === 'extend-sides' &&
+          (leafIndex < contentRange.start || leafIndex > contentRange.end)) {
+        // Use edge pixels for extend-sides
+        const edgePixelY = leafIndex < contentRange.start ?
+          samplingRegion.y :
+          samplingRegion.y + samplingRegion.height - 1;
+        const edgeBackgroundPosY = -(edgePixelY * pixelScale);
+        baseStyles.backgroundPosition = `center ${edgeBackgroundPosY}px`;
       }
     }
 
     return baseStyles;
-  };
+  }, [scaleMode, numLeaves, bookWidth, bookHeight, bleedType, calculatePreviewSamplingRegion, calculatePreviewContentRange, calculatePreviewLeafPosition]);
 
 
   const generateTemplate = async () => {
-    // Template generation disabled - no longer using thickness-based calculations
-    alert('Template generation temporarily disabled. Use the image size requirements shown above.');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Use the new 285.7 DPI calculation (1/0.0035" thickness)
+    const DPI = 285.7;
+
+    // For side edges: width = numLeaves pixels, height = book height at 285.7 DPI
+    const sideTemplateWidth = numLeaves;
+    const sideTemplateHeight = Math.round((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * DPI);
+
+    // For top/bottom edges: width = book width at 285.7 DPI, height = numLeaves pixels
+    const topBottomTemplateWidth = Math.round((bleedType === "add_bleed" ? bookWidth + 0.25 : bookWidth) * DPI);
+    const topBottomTemplateHeight = numLeaves;
+
+    // Generate side edge template
+    canvas.width = sideTemplateWidth;
+    canvas.height = sideTemplateHeight;
+
+    // Fill with light background
+    ctx.fillStyle = '#f8f9fa';
+    ctx.fillRect(0, 0, sideTemplateWidth, sideTemplateHeight);
+
+    // Calculate zone sizes at 285.7 DPI
+    const bleedZonePixels = Math.round(0.125 * DPI); // 0.125" bleed zone in pixels (~36px)
+    const safetyZonePixels = Math.round(0.125 * DPI); // 0.125" safety zone in pixels (~36px)
+
+    // Draw bleed zones (red - will be cut off) for side template
+    ctx.fillStyle = 'rgba(220, 53, 69, 0.5)'; // Red with 50% opacity
+    // Top bleed zone
+    ctx.fillRect(0, 0, sideTemplateWidth, bleedZonePixels);
+    // Bottom bleed zone
+    ctx.fillRect(0, sideTemplateHeight - bleedZonePixels, sideTemplateWidth, bleedZonePixels);
+
+    // Draw safety zones (blue - may be cut off) for side template
+    ctx.fillStyle = 'rgba(0, 123, 255, 0.5)'; // Blue with 50% opacity
+    // Top safety zone
+    ctx.fillRect(0, bleedZonePixels, sideTemplateWidth, safetyZonePixels);
+    // Bottom safety zone
+    ctx.fillRect(0, sideTemplateHeight - bleedZonePixels - safetyZonePixels, sideTemplateWidth, safetyZonePixels);
+
+    // Draw pixel grid for side template (if width is reasonable for grid display)
+    if (sideTemplateWidth <= 100) {
+      ctx.strokeStyle = '#dee2e6';
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= sideTemplateWidth; x++) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, sideTemplateHeight);
+        ctx.stroke();
+      }
+    }
+
+    // Add instructions text with dynamic sizing
+    ctx.fillStyle = '#495057';
+    ctx.textAlign = 'center';
+    ctx.save();
+    ctx.translate(sideTemplateWidth / 2, sideTemplateHeight / 2);
+    ctx.rotate(Math.PI / 2); // 90 degrees
+
+    // Calculate appropriate font size based on template height (rotated, so height becomes available width)
+    const availableWidth = sideTemplateHeight * 0.8; // Use 80% of height for text
+    const baseFontSize = Math.max(Math.min(availableWidth / 40, 12), 8); // Scale font, min 8px, max 12px
+    ctx.font = `${baseFontSize}px Arial`;
+
+    // Check if we need single line layout (for narrow templates)
+    if (sideTemplateHeight < 200) {
+      // Single line layout for small templates
+      ctx.fillText(`Side Edge Template: ${bookHeight}" tall, ${totalPages}pg | ${sideTemplateWidth}×${sideTemplateHeight}px | Blue: safety | Red: bleed`, 0, 0);
+    } else {
+      // Multi-line layout for larger templates
+      const lineSpacing = baseFontSize * 1.4;
+      ctx.fillText(`Side Edge Template for ${bookHeight}" tall, ${totalPages} page book`, 0, -lineSpacing * 1.5);
+      ctx.fillText(`${sideTemplateWidth}×${sideTemplateHeight}px`, 0, -lineSpacing * 0.5);
+      ctx.fillText(`Blue: safety margin, may be cut off`, 0, lineSpacing * 0.5);
+      ctx.fillText(`Red: bleed zone, will be cut off`, 0, lineSpacing * 1.5);
+    }
+    ctx.restore();
+
+    // Store side template canvas data for ZIP
+    const sideTemplateData = canvas.toDataURL('image/png').split(',')[1]; // Get base64 data without prefix
+
+    // Generate top/bottom template
+    canvas.width = topBottomTemplateWidth;
+    canvas.height = topBottomTemplateHeight;
+
+    // Fill with light background
+    ctx.fillStyle = '#f8f9fa';
+    ctx.fillRect(0, 0, topBottomTemplateWidth, topBottomTemplateHeight);
+
+    // Draw bleed zones (red - will be cut off) for top/bottom template
+    ctx.fillStyle = 'rgba(220, 53, 69, 0.5)'; // Red with 50% opacity
+    // Right bleed zone (outer edge)
+    ctx.fillRect(topBottomTemplateWidth - bleedZonePixels, 0, bleedZonePixels, topBottomTemplateHeight);
+
+    // Draw safety zones (blue - may be cut off) for top/bottom template
+    ctx.fillStyle = 'rgba(0, 123, 255, 0.5)'; // Blue with 50% opacity
+    // Left safety zone (binding edge - no bleed zone here)
+    ctx.fillRect(0, 0, safetyZonePixels, topBottomTemplateHeight);
+    // Right safety zone (next to bleed zone)
+    ctx.fillRect(topBottomTemplateWidth - bleedZonePixels - safetyZonePixels, 0, safetyZonePixels, topBottomTemplateHeight);
+
+    // Draw pixel grid for top/bottom template (if height is reasonable for grid display)
+    if (topBottomTemplateHeight <= 100) {
+      ctx.strokeStyle = '#dee2e6';
+      ctx.lineWidth = 1;
+      for (let y = 0; y <= topBottomTemplateHeight; y++) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(topBottomTemplateWidth, y);
+        ctx.stroke();
+      }
+    }
+
+    // Add instructions text with dynamic sizing
+    ctx.fillStyle = '#495057';
+    ctx.textAlign = 'center';
+
+    // Calculate appropriate font size based on template height
+    const topBottomFontSize = Math.max(Math.min(topBottomTemplateHeight * 0.15, 12), 8); // Scale font, min 8px, max 12px
+    ctx.font = `${topBottomFontSize}px Arial`;
+
+    // Check if we need single line layout (for very short templates)
+    if (topBottomTemplateHeight < 40) {
+      // Single line layout for very small templates
+      ctx.fillText(`Top/Bottom Edge: ${bookWidth}" wide, ${totalPages}pg | ${topBottomTemplateWidth}×${topBottomTemplateHeight}px | Blue: safety | Red: bleed`, topBottomTemplateWidth / 2, topBottomTemplateHeight / 2);
+    } else if (topBottomTemplateHeight < 80) {
+      // Two line layout for small templates
+      ctx.fillText(`Top/Bottom Edge: ${bookWidth}" wide, ${totalPages}pg | ${topBottomTemplateWidth}×${topBottomTemplateHeight}px`, topBottomTemplateWidth / 2, topBottomTemplateHeight / 2 - topBottomFontSize * 0.7);
+      ctx.fillText(`Blue: safety margin | Red: bleed zone`, topBottomTemplateWidth / 2, topBottomTemplateHeight / 2 + topBottomFontSize * 0.7);
+    } else {
+      // Multi-line layout for larger templates
+      const lineSpacing = topBottomFontSize * 1.4;
+      ctx.fillText(`Top/Bottom Edge Template for ${bookWidth}" wide, ${totalPages} page book`, topBottomTemplateWidth / 2, topBottomTemplateHeight / 2 - lineSpacing * 1.5);
+      ctx.fillText(`${topBottomTemplateWidth}×${topBottomTemplateHeight}px`, topBottomTemplateWidth / 2, topBottomTemplateHeight / 2 - lineSpacing * 0.5);
+      ctx.fillText(`Blue: safety margin, may be cut off`, topBottomTemplateWidth / 2, topBottomTemplateHeight / 2 + lineSpacing * 0.5);
+      ctx.fillText(`Red: bleed zone, will be cut off`, topBottomTemplateWidth / 2, topBottomTemplateHeight / 2 + lineSpacing * 1.5);
+    }
+
+    // Store top/bottom template canvas data for ZIP
+    const topBottomTemplateData = canvas.toDataURL('image/png').split(',')[1]; // Get base64 data without prefix
+
+    // Create ZIP file with both templates
+    const zip = new JSZip();
+    zip.file(`side-edge-template-${sideTemplateWidth}x${sideTemplateHeight}.png`, sideTemplateData, { base64: true });
+    zip.file(`top-bottom-edge-template-${topBottomTemplateWidth}x${topBottomTemplateHeight}.png`, topBottomTemplateData, { base64: true });
+
+    // Generate and download ZIP
+    zip.generateAsync({ type: 'blob' }).then((content) => {
+      const zipLink = document.createElement('a');
+      zipLink.href = URL.createObjectURL(content);
+      zipLink.download = `edge-templates-${bookWidth}x${bookHeight}-${totalPages}pages.zip`;
+      zipLink.click();
+      URL.revokeObjectURL(zipLink.href); // Clean up
+    });
   };
 
   return (
@@ -415,7 +955,7 @@ export default function Home() {
                       type="file"
                       accept="application/pdf"
                       onChange={handlePdfUpload}
-                      className="ml-6"
+                      className="ml-6 max-w-[calc(100%-2rem)]"
                     />
                   )}
                   
@@ -509,12 +1049,13 @@ export default function Home() {
                     <select
                       id="scaleMode"
                       value={scaleMode}
-                      onChange={(e) => setScaleMode(e.target.value as 'stretch' | 'fit' | 'fill' | 'none')}
+                      onChange={(e) => setScaleMode(e.target.value as 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides')}
                       className="w-full px-3 py-1 text-sm border border-gray-300 rounded-md"
                     >
                       <option value="fill">Fill (recommended) - Crop to fit perfectly</option>
                       <option value="stretch">Stretch - Use entire image, may distort</option>
                       <option value="fit">Fit - Show entire image, may have gaps</option>
+                      <option value="extend-sides">Extend Sides - Center image, extend edges</option>
                       <option value="none">None - Use image as-is</option>
                     </select>
 
@@ -577,10 +1118,9 @@ export default function Home() {
                     <div className="flex gap-2">
                       <button
                         onClick={generateTemplate}
-                        className="text-xs bg-gray-400 text-white px-2 py-1 rounded cursor-not-allowed"
-                        disabled
+                        className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
                       >
-                        📦 Templates (temporarily disabled)
+                        📦 Templates
                       </button>
                     </div>
                   </div>
@@ -592,7 +1132,7 @@ export default function Home() {
               {((selectedPdf && totalPages > 0) || (useCustomDimensions && totalPages > 0)) && (
                 <div className="space-y-4">
                   <div className="space-y-3">
-                    <Label>4. Upload Edge Images (choose which edges you want)</Label>
+                    <Label>2. Upload Edge Images (choose which edges you want)</Label>
 
                     <div>
                       <Label htmlFor="topImage" className="text-sm">Top Edge Image <span className="text-gray-500">(optional)</span></Label>
@@ -617,7 +1157,7 @@ export default function Home() {
                         onChange={handleImageUpload}
                         className="mt-1"
                       />
-                      {selectedImage && (
+                      {sideEdgeImage && (
                         <p className="text-xs text-green-600 mt-1">✅ Side edge uploaded</p>
                       )}
                     </div>
@@ -636,7 +1176,7 @@ export default function Home() {
                       )}
                     </div>
 
-                    {!topEdgeImage && !selectedImage && !bottomEdgeImage && (
+                    {!topEdgeImage && !sideEdgeImage && !bottomEdgeImage && (
                       <p className="text-xs text-amber-600">Please upload at least one edge image</p>
                     )}
                   </div>
@@ -645,7 +1185,7 @@ export default function Home() {
 
               {/* Preview Button */}
               {((selectedPdf && totalPages > 0) || (useCustomDimensions && totalPages > 0)) && 
-               (selectedImage || topEdgeImage || bottomEdgeImage) && (
+               (sideEdgeImage || topEdgeImage || bottomEdgeImage) && (
                 <Button
                   onClick={generatePreview}
                   variant="outline"
@@ -657,7 +1197,7 @@ export default function Home() {
 
               {/* Process Button */}
               {((selectedPdf && totalPages > 0) || (useCustomDimensions && totalPages > 0)) && 
-               (selectedImage || topEdgeImage || bottomEdgeImage) && (
+               (sideEdgeImage || topEdgeImage || bottomEdgeImage) && (
                 <div className="space-y-3">
                   <Button
                     onClick={processActualPdf}
@@ -813,7 +1353,7 @@ export default function Home() {
                           </div>
 
                           {/* Left Edge Strip (only if not first page) */}
-                          {currentPage > 1 && selectedImage && (
+                          {currentPage > 1 && sideEdgeImage && (
                             <div
                               className="absolute top-0"
                               style={{
@@ -822,7 +1362,7 @@ export default function Home() {
                                 height: "100%",
                                 ...getEdgeBackgroundStyle(
                                   'side',
-                                  selectedImage,
+                                  sideEdgeImage,
                                   (currentPage - 1) - 1, // Left page index
                                   Math.max(0.125 * 50, 6),
                                   Math.min(bookHeight * 25, 280)
@@ -838,7 +1378,7 @@ export default function Home() {
                           )}
 
                           {/* Top Edge Strip for Left Page (only if top edge image is uploaded) */}
-                          { topEdgeImage && currentPage > 1 && selectedImage && (
+                          { topEdgeImage && currentPage > 1 && (
                             <div
                               className="absolute top-0 left-0 w-full border-t border-gray-400"
                               style={{
@@ -862,7 +1402,7 @@ export default function Home() {
                           )}
 
                           {/* Bottom Edge Strip for Left Page (only if bottom edge image is uploaded) */}
-                          { bottomEdgeImage && currentPage > 1 && selectedImage && (
+                          { bottomEdgeImage && currentPage > 1 && (
                             <div
                               className="absolute bottom-0 left-0 w-full border-b border-gray-400"
                               style={{
@@ -940,9 +1480,9 @@ export default function Home() {
                             className="absolute top-0 right-0 h-full border-r border-gray-400"
                             style={{
                               width: `${Math.max(0.125 * 50, 6)}px`,
-                              ...(selectedImage ? getEdgeBackgroundStyle(
+                              ...(sideEdgeImage ? getEdgeBackgroundStyle(
                                 'side',
-                                selectedImage,
+                                sideEdgeImage,
                                 currentPage - 1, // Right page index
                                 Math.max(0.125 * 50, 6),
                                 Math.min(bookHeight * 25, 280)
@@ -996,10 +1536,10 @@ export default function Home() {
                                 transform: "skewX(-1deg)",
                                 transformOrigin: "center bottom",
                                 zIndex: 10,
-                                // Miter the right corner where it meets the side edge
-                                clipPath: selectedImage ?
-                                  `polygon(0 0, calc(100% - ${Math.max(0.125 * 50, 6)}px) 0, 100% 100%, 0 100%)` : // Side edge exists, miter right corner
-                                  'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // No side edge, square corners
+                                // Always miter the outer corner in all-edges mode
+                                clipPath: true ?
+                                  `polygon(0 0, calc(100% - ${Math.max(0.125 * 50, 6)}px) 0, 100% 100%, 0 100%)` : // Miter outer corner (bottom-right)
+                                  'polygon(0 0, 100% 0, 100% 100%, 0 100%)', // Square corners for side-only mode
                               }}
                             />
                           )}
@@ -1017,44 +1557,44 @@ export default function Home() {
                   )}
 
                   {/* Edge Image View */}
-                  {viewMode === "shelf" && (selectedImage || topEdgeImage || bottomEdgeImage) && (
+                  {viewMode === "shelf" && (sideEdgeImage || topEdgeImage || bottomEdgeImage) && (
                     <div className="w-full bg-gradient-to-b from-gray-50 to-gray-100 p-6 rounded-lg">
                       <div className="flex flex-col items-center space-y-6">
-                        <h3 className="text-lg font-medium text-gray-800 mb-4">Your Edge Design</h3>
-                        
+                        <h3 className="text-lg font-medium text-gray-800 mb-4">Your Edge Design Preview</h3>
+                        <div className="text-sm text-gray-600 text-center">
+                          Showing how your edges will appear with "{scaleMode}" scaling
+                        </div>
+
                         <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
                           {/* Top Edge */}
                           {topEdgeImage && (
                             <div className="flex flex-col items-center space-y-2">
                               <span className="text-sm font-medium text-gray-600">Top Edge</span>
-                              <img 
-                                src={topEdgeImage} 
-                                alt="Top edge design" 
-                                className="max-w-full max-h-32 object-contain rounded-lg shadow-lg border border-gray-200 bg-white"
+                              <canvas
+                                ref={topEdgeCanvasRef}
+                                className="rounded-lg shadow-lg border border-gray-200 bg-white"
                               />
                             </div>
                           )}
-                          
+
                           {/* Side Edge */}
-                          {selectedImage && (
+                          {sideEdgeImage && (
                             <div className="flex flex-col items-center space-y-2">
                               <span className="text-sm font-medium text-gray-600">Side Edge</span>
-                              <img 
-                                src={selectedImage} 
-                                alt="Side edge design" 
-                                className="max-w-full max-h-64 object-contain rounded-lg shadow-lg border border-gray-200 bg-white"
+                              <canvas
+                                ref={sideEdgeCanvasRef}
+                                className="rounded-lg shadow-lg border border-gray-200 bg-white"
                               />
                             </div>
                           )}
-                          
+
                           {/* Bottom Edge */}
                           {bottomEdgeImage && (
                             <div className="flex flex-col items-center space-y-2">
                               <span className="text-sm font-medium text-gray-600">Bottom Edge</span>
-                              <img 
-                                src={bottomEdgeImage} 
-                                alt="Bottom edge design" 
-                                className="max-w-full max-h-32 object-contain rounded-lg shadow-lg border border-gray-200 bg-white"
+                              <canvas
+                                ref={bottomEdgeCanvasRef}
+                                className="rounded-lg shadow-lg border border-gray-200 bg-white"
                               />
                             </div>
                           )}
