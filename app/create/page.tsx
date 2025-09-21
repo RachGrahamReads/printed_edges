@@ -188,8 +188,8 @@ export default function CreatePage() {
           return;
         }
 
-        // Set canvas dimensions - always 300px height for consistency
-        const fixedHeight = 300;
+        // Set canvas dimensions - always 350px height for consistency
+        const fixedHeight = 350;
 
         if (edgeType === 'side') {
           // Side edge: fixed height, width based on thickness ratio
@@ -1421,17 +1421,14 @@ export default function CreatePage() {
                         </div>
 
                         <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
-                          <div className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-                            Preview Height: 300px • Actual: {numLeaves}px × {Math.round(bookHeight * 285.7)}px
-                          </div>
                           {/* Side Edge */}
                           <div className="flex flex-col items-center space-y-2">
-                            <span className="text-sm font-medium text-gray-600">Side Edge (300px preview)</span>
+                            <span className="text-sm font-medium text-gray-600">Side Edge</span>
                             <div className="relative">
                               <canvas
                                 ref={sideEdgeCanvasRef}
                                 className="rounded-lg shadow-lg border border-gray-200 bg-white"
-                                style={{ height: '300px' }}
+                                style={{ height: '350px' }}
                               />
                               {!canvasReady && (
                                 <div className="absolute inset-0 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
