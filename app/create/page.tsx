@@ -14,7 +14,8 @@ import {
   Eye,
   ArrowLeft,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Pipette
 } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -748,60 +749,106 @@ export default function CreatePage() {
                     )}
                   </div>
 
-                  {/* Top Edge Color */}
+                  {/* Top and Bottom Edge Colors */}
                   <div>
-                    <Label htmlFor="topEdgeColor" className="text-sm">Top Edge Color <span className="text-gray-500">(optional)</span></Label>
-                    <div className="flex gap-2 items-center mt-1">
-                      <select
-                        id="topEdgeColor"
-                        value={topEdgeColor}
-                        onChange={(e) => setTopEdgeColor(e.target.value)}
-                        className="px-3 py-2 text-sm border border-gray-300 rounded-md flex-1"
-                      >
-                        <option value="none">None</option>
-                        <option value="black">Black</option>
-                        <option value="custom">Custom Color</option>
-                      </select>
-                      {topEdgeColor === "custom" && (
-                        <input
-                          type="color"
-                          value="#000000"
-                          onChange={(e) => setTopEdgeColor(e.target.value)}
-                          className="w-10 h-10 border border-gray-300 rounded cursor-pointer"
-                        />
-                      )}
-                    </div>
-                    {topEdgeColor !== "none" && (
-                      <p className="text-xs text-green-600 mt-1">✅ Top edge color set</p>
-                    )}
-                  </div>
+                    <Label className="text-sm">Edge Colors <span className="text-gray-500">(optional)</span></Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                      {/* Top Edge Color */}
+                      <div>
+                        <Label htmlFor="topEdgeColor" className="text-xs text-gray-600">Top Edge</Label>
+                        <div className="flex gap-2 items-center mt-1">
+                          <select
+                            id="topEdgeColor"
+                            value={topEdgeColor}
+                            onChange={(e) => setTopEdgeColor(e.target.value)}
+                            className="px-3 py-2 text-sm border border-gray-300 rounded-md flex-1"
+                          >
+                            <option value="none">None</option>
+                            <option value="black">Black</option>
+                            <option value="custom">Custom</option>
+                          </select>
+                          {topEdgeColor === "custom" && (
+                            <>
+                              <input
+                                type="color"
+                                value="#000000"
+                                onChange={(e) => setTopEdgeColor(e.target.value)}
+                                className="w-8 h-8 border border-gray-300 rounded cursor-pointer"
+                                title="Pick color"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if ('EyeDropper' in window) {
+                                    const eyeDropper = new (window as any).EyeDropper();
+                                    eyeDropper.open().then((result: any) => {
+                                      setTopEdgeColor(result.sRGBHex);
+                                    }).catch(() => {
+                                      // Fallback if eyedropper fails
+                                    });
+                                  }
+                                }}
+                                className="p-2 border border-gray-300 rounded hover:bg-gray-50"
+                                title="Use eyedropper"
+                              >
+                                <Pipette className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                        {topEdgeColor !== "none" && (
+                          <p className="text-xs text-green-600 mt-1">✅ Top edge color set</p>
+                        )}
+                      </div>
 
-                  {/* Bottom Edge Color */}
-                  <div>
-                    <Label htmlFor="bottomEdgeColor" className="text-sm">Bottom Edge Color <span className="text-gray-500">(optional)</span></Label>
-                    <div className="flex gap-2 items-center mt-1">
-                      <select
-                        id="bottomEdgeColor"
-                        value={bottomEdgeColor}
-                        onChange={(e) => setBottomEdgeColor(e.target.value)}
-                        className="px-3 py-2 text-sm border border-gray-300 rounded-md flex-1"
-                      >
-                        <option value="none">None</option>
-                        <option value="black">Black</option>
-                        <option value="custom">Custom Color</option>
-                      </select>
-                      {bottomEdgeColor === "custom" && (
-                        <input
-                          type="color"
-                          value="#000000"
-                          onChange={(e) => setBottomEdgeColor(e.target.value)}
-                          className="w-10 h-10 border border-gray-300 rounded cursor-pointer"
-                        />
-                      )}
+                      {/* Bottom Edge Color */}
+                      <div>
+                        <Label htmlFor="bottomEdgeColor" className="text-xs text-gray-600">Bottom Edge</Label>
+                        <div className="flex gap-2 items-center mt-1">
+                          <select
+                            id="bottomEdgeColor"
+                            value={bottomEdgeColor}
+                            onChange={(e) => setBottomEdgeColor(e.target.value)}
+                            className="px-3 py-2 text-sm border border-gray-300 rounded-md flex-1"
+                          >
+                            <option value="none">None</option>
+                            <option value="black">Black</option>
+                            <option value="custom">Custom</option>
+                          </select>
+                          {bottomEdgeColor === "custom" && (
+                            <>
+                              <input
+                                type="color"
+                                value="#000000"
+                                onChange={(e) => setBottomEdgeColor(e.target.value)}
+                                className="w-8 h-8 border border-gray-300 rounded cursor-pointer"
+                                title="Pick color"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if ('EyeDropper' in window) {
+                                    const eyeDropper = new (window as any).EyeDropper();
+                                    eyeDropper.open().then((result: any) => {
+                                      setBottomEdgeColor(result.sRGBHex);
+                                    }).catch(() => {
+                                      // Fallback if eyedropper fails
+                                    });
+                                  }
+                                }}
+                                className="p-2 border border-gray-300 rounded hover:bg-gray-50"
+                                title="Use eyedropper"
+                              >
+                                <Pipette className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                        {bottomEdgeColor !== "none" && (
+                          <p className="text-xs text-green-600 mt-1">✅ Bottom edge color set</p>
+                        )}
+                      </div>
                     </div>
-                    {bottomEdgeColor !== "none" && (
-                      <p className="text-xs text-green-600 mt-1">✅ Bottom edge color set</p>
-                    )}
                   </div>
 
                   {/* Future image upload options (commented out for now) */}
