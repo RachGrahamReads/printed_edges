@@ -188,15 +188,20 @@ export default function CreatePage() {
           return;
         }
 
-        // Set proportional canvas dimensions based on book dimensions and page count
+        // Set canvas dimensions - always 250px height for consistency
+        const fixedHeight = 250;
+
         if (edgeType === 'side') {
-          canvas.height = Math.max((bookHeight / bookWidth) * 300, 50);
-          const actualRatio = numLeaves / (bookHeight * 285.7);
-          canvas.width = Math.max(actualRatio * canvas.height, 20);
+          // Side edge: fixed height, width based on thickness ratio
+          canvas.height = fixedHeight;
+          const thicknessRatio = numLeaves / (bookHeight * 285.7);
+          canvas.width = Math.max(thicknessRatio * fixedHeight, 20);
         } else {
-          canvas.width = 300;
-          const actualRatio = numLeaves / (bookWidth * 285.7);
-          canvas.height = Math.max(actualRatio * 300, 20);
+          // Top/bottom edge: width based on book width ratio, height based on thickness
+          const widthRatio = bookWidth / bookHeight;
+          canvas.width = fixedHeight * widthRatio;
+          const thicknessRatio = numLeaves / (bookWidth * 285.7);
+          canvas.height = Math.max(thicknessRatio * canvas.width, 20);
         }
 
         // Clear canvas and show loading state
@@ -1416,14 +1421,17 @@ export default function CreatePage() {
                         </div>
 
                         <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
+                          <div className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                            Preview Height: 250px • Actual: {numLeaves}px × {Math.round(bookHeight * 285.7)}px
+                          </div>
                           {/* Side Edge */}
                           <div className="flex flex-col items-center space-y-2">
-                            <span className="text-sm font-medium text-gray-600">Side Edge</span>
+                            <span className="text-sm font-medium text-gray-600">Side Edge (250px preview)</span>
                             <div className="relative">
                               <canvas
                                 ref={sideEdgeCanvasRef}
                                 className="rounded-lg shadow-lg border border-gray-200 bg-white"
-                                style={{ minWidth: '200px', minHeight: '100px' }}
+                                style={{ height: '250px' }}
                               />
                               {!canvasReady && (
                                 <div className="absolute inset-0 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
