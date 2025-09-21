@@ -757,7 +757,7 @@ export default function CreatePage() {
 
                   {/* Side Edge Image */}
                   <div className="bg-white p-4 rounded-lg border border-gray-200">
-                    <Label htmlFor="sideImage" className="text-sm font-medium mb-2 block">Side Edge Image <span className="text-gray-500 font-normal">(optional)</span></Label>
+                    <Label htmlFor="sideImage" className="text-sm font-medium mb-2 block">Side Edge Image</Label>
                     <Input
                       id="sideImage"
                       type="file"
@@ -774,7 +774,7 @@ export default function CreatePage() {
 
                   {/* Top and Bottom Edge Colors */}
                   <div className="bg-white p-4 rounded-lg border border-gray-200">
-                    <Label className="text-sm font-medium mb-3 block">Edge Colors <span className="text-gray-500 font-normal">(optional)</span></Label>
+                    <Label className="text-sm font-medium mb-3 block">Edge Colors</Label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                       {/* Top Edge Color */}
                       <div>
