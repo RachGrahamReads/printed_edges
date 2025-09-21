@@ -687,16 +687,20 @@ export default function CreatePage() {
                 Upload Your Files
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-5">
               {/* PDF Upload */}
-              <div className="space-y-2">
-                <Label htmlFor="pdf-upload">1. Upload Your PDF</Label>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-medium">1</div>
+                  <Label htmlFor="pdf-upload" className="font-medium">Upload Your PDF</Label>
+                </div>
                 <Input
                   id="pdf-upload"
                   type="file"
                   accept="application/pdf"
                   onChange={handlePdfUpload}
-                  className="cursor-pointer"
+                  className="cursor-pointer border-dashed border-2 h-12 hover:border-blue-300 transition-colors"
+                  placeholder="Choose PDF file..."
                 />
                 {pdfFile && (
                   <div className="flex items-center gap-2 text-sm">
@@ -722,10 +726,10 @@ export default function CreatePage() {
                 )}
               </div>
 
-              {/* Options */}
+              {/* PDF Options */}
               {pdfFile && (
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center space-x-3">
                     <input
                       id="hasBleed"
                       type="checkbox"
@@ -733,41 +737,44 @@ export default function CreatePage() {
                       onChange={(e) => setBleedType(e.target.checked ? "existing_bleed" : "add_bleed")}
                       className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
                     />
-                    <Label htmlFor="hasBleed" className="text-sm">My document already has bleed</Label>
+                    <Label htmlFor="hasBleed" className="text-sm font-medium">My document already has bleed</Label>
                   </div>
                 </div>
               )}
 
-              {/* Edge Image Uploads */}
+              {/* Edge Design Section */}
               {pdfFile && (
                 <div className="space-y-4">
-                  <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                    <p className="font-medium text-sm">Required Image Size:</p>
-                    <div className="text-sm text-blue-700 space-y-1">
-                      <p>Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 285.7).toFixed(0)}px minimum</p>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-sm font-medium">2</div>
+                    <Label className="font-medium">Choose Your Edge Design</Label>
                   </div>
 
-                  <Label>2. Choose Your Edge Design</Label>
+                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                    <p className="text-sm font-medium text-blue-800 mb-1">Recommended Image Size:</p>
+                    <p className="text-xs text-blue-700">Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 285.7).toFixed(0)}px minimum</p>
+                  </div>
 
                   {/* Side Edge Image */}
-                  <div>
-                    <Label htmlFor="sideImage" className="text-sm">Side Edge Image <span className="text-gray-500">(optional)</span></Label>
+                  <div className="bg-white p-4 rounded-lg border border-gray-200">
+                    <Label htmlFor="sideImage" className="text-sm font-medium mb-2 block">Side Edge Image <span className="text-gray-500 font-normal">(optional)</span></Label>
                     <Input
                       id="sideImage"
                       type="file"
                       accept="image/*"
                       onChange={(e) => handleEdgeImageUpload(e, 'side')}
-                      className="mt-1"
+                      className="border-dashed border-2 h-10 hover:border-purple-300 transition-colors"
                     />
                     {sideEdgeImage && (
-                      <p className="text-xs text-green-600 mt-1">✅ Side edge uploaded</p>
+                      <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                        <CheckCircle className="h-3 w-3" /> Side edge uploaded
+                      </p>
                     )}
                   </div>
 
                   {/* Top and Bottom Edge Colors */}
-                  <div>
-                    <Label className="text-sm">Edge Colors <span className="text-gray-500">(optional)</span></Label>
+                  <div className="bg-white p-4 rounded-lg border border-gray-200">
+                    <Label className="text-sm font-medium mb-3 block">Edge Colors <span className="text-gray-500 font-normal">(optional)</span></Label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                       {/* Top Edge Color */}
                       <div>
@@ -969,11 +976,11 @@ export default function CreatePage() {
                   )}
 
                   {!sideEdgeImage && topEdgeColor === "none" && bottomEdgeColor === "none" && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-4">
                       <div className="flex items-start gap-2">
                         <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
                         <p className="text-xs text-amber-700">
-                          Please upload a side edge image or choose a color for top/bottom edges to enable preview
+                          Upload a side edge image or choose colors for top/bottom edges to enable preview
                         </p>
                       </div>
                     </div>
