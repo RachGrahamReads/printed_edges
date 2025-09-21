@@ -873,19 +873,19 @@ export default function CreatePage() {
                               <h4 className="font-semibold text-sm">Edge Image Scaling Modes</h4>
                             </div>
                             <div>
-                              <p className="font-medium text-xs text-green-700">✨ Fill (Recommended)</p>
+                              <p className="font-medium text-xs text-green-700">Fill (Recommended)</p>
                               <p className="text-xs text-gray-600">Scales your image to perfectly fit the required dimensions. May crop parts of the image but ensures optimal coverage.</p>
                             </div>
                             <div>
-                              <p className="font-medium text-xs text-blue-700">🔄 Stretch</p>
+                              <p className="font-medium text-xs text-blue-700">Stretch</p>
                               <p className="text-xs text-gray-600">Uses your entire image but may distort proportions to fit the exact dimensions needed.</p>
                             </div>
                             <div>
-                              <p className="font-medium text-xs text-purple-700">📐 Fit</p>
+                              <p className="font-medium text-xs text-purple-700">Fit</p>
                               <p className="text-xs text-gray-600">Shows your entire image without cropping, but may leave gaps if proportions don't match.</p>
                             </div>
                             <div>
-                              <p className="font-medium text-xs text-gray-700">🎯 None</p>
+                              <p className="font-medium text-xs text-gray-700">None</p>
                               <p className="text-xs text-gray-600">Uses your image at original size with no scaling - best for images already sized correctly.</p>
                             </div>
                             <button
