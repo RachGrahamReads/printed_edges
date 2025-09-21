@@ -856,10 +856,10 @@ export default function CreatePage() {
                         className="w-full px-3 py-1 text-sm border border-gray-300 rounded-md"
                       >
                         <option value="fill">Fill (recommended) - Crop to fit perfectly</option>
-                        <option value="stretch">Stretch - May distort (use for abstracts)</option>
                         <option value="fit">Fit - Show entire image, may have gaps</option>
-                        <option value="extend-sides">Extend Sides - Center image, extend edges</option>
                         <option value="none">None - Use image as-is</option>
+                        <option value="stretch">Stretch - May distort (use for abstracts)</option>
+                        <option value="extend-sides">Extend Sides - Center image, extend edges</option>
                       </select>
 
                       {/* Information popup */}
@@ -877,17 +877,17 @@ export default function CreatePage() {
                               <p className="text-xs text-gray-600">Scales your image to perfectly fit the required dimensions. May crop parts of the image but ensures optimal coverage.</p>
                             </div>
                             <div>
-                              <p className="font-medium text-xs text-blue-700">Stretch</p>
-                              <p className="text-xs text-gray-600">Uses your entire image but may distort proportions to fit the exact dimensions needed.</p>
-                              <p className="text-xs text-amber-600 mt-1">⚠️ Best for abstract patterns or gradients where distortion won't be noticeable.</p>
-                            </div>
-                            <div>
                               <p className="font-medium text-xs text-purple-700">Fit</p>
                               <p className="text-xs text-gray-600">Shows your entire image without cropping, but may leave gaps if proportions don't match.</p>
                             </div>
                             <div>
                               <p className="font-medium text-xs text-gray-700">None</p>
                               <p className="text-xs text-gray-600">Uses your image at original size with no scaling - best for images already sized correctly.</p>
+                            </div>
+                            <div>
+                              <p className="font-medium text-xs text-blue-700">Stretch</p>
+                              <p className="text-xs text-gray-600">Uses your entire image but may distort proportions to fit the exact dimensions needed.</p>
+                              <p className="text-xs text-amber-600 mt-1">⚠️ Best for abstract patterns or gradients where distortion won't be noticeable.</p>
                             </div>
                             <div>
                               <p className="font-medium text-xs text-orange-700">Extend Sides</p>
