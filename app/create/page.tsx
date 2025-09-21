@@ -196,7 +196,7 @@ export default function CreatePage() {
           // Side edge: fixed height, width based on thickness ratio
           canvas.height = fixedHeight;
           const thicknessRatio = numLeaves / (bookHeight * 285.7);
-          canvas.width = Math.max(thicknessRatio * fixedHeight, 20);
+          canvas.width = Math.max(thicknessRatio * fixedHeight, 40); // Minimum 40px for better visibility
         } else {
           // Top/bottom edge: width based on book width ratio, height based on thickness
           const widthRatio = bookWidth / bookHeight;
@@ -205,15 +205,27 @@ export default function CreatePage() {
           canvas.height = Math.max(thicknessRatio * canvas.width, 20);
         }
 
+        // Set high DPI for sharper rendering
+        const dpr = window.devicePixelRatio || 1;
+        const displayWidth = canvas.width;
+        const displayHeight = canvas.height;
+
+        canvas.width = displayWidth * dpr;
+        canvas.height = displayHeight * dpr;
+        canvas.style.width = displayWidth + 'px';
+        canvas.style.height = displayHeight + 'px';
+
+        ctx.scale(dpr, dpr);
+
         // Clear canvas and show loading state
         ctx.fillStyle = '#f8f9fa';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, displayWidth, displayHeight);
 
         // Add loading indicator
         ctx.fillStyle = '#6b7280';
         ctx.font = '12px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Loading...', canvas.width / 2, canvas.height / 2);
+        ctx.fillText('Loading...', displayWidth / 2, displayHeight / 2);
 
         const img = new Image();
 
@@ -221,7 +233,11 @@ export default function CreatePage() {
           try {
             // Clear canvas again
             ctx.fillStyle = '#f8f9fa';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, 0, displayWidth, displayHeight);
+
+            // Enable image smoothing for better quality
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
 
             // Mark canvas as ready
             setCanvasReady(true);
@@ -231,26 +247,26 @@ export default function CreatePage() {
 
             switch (scaleMode) {
               case 'stretch':
-                drawWidth = canvas.width;
-                drawHeight = canvas.height;
+                drawWidth = displayWidth;
+                drawHeight = displayHeight;
                 drawX = 0;
                 drawY = 0;
                 break;
 
               case 'fill':
-                const fillScale = Math.max(canvas.width / img.width, canvas.height / img.height);
+                const fillScale = Math.max(displayWidth / img.width, displayHeight / img.height);
                 drawWidth = img.width * fillScale;
                 drawHeight = img.height * fillScale;
-                drawX = (canvas.width - drawWidth) / 2;
-                drawY = (canvas.height - drawHeight) / 2;
+                drawX = (displayWidth - drawWidth) / 2;
+                drawY = (displayHeight - drawHeight) / 2;
                 break;
 
               case 'fit':
-                const fitScale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                const fitScale = Math.min(displayWidth / img.width, displayHeight / img.height);
                 drawWidth = img.width * fitScale;
                 drawHeight = img.height * fitScale;
-                drawX = (canvas.width - drawWidth) / 2;
-                drawY = (canvas.height - drawHeight) / 2;
+                drawX = (displayWidth - drawWidth) / 2;
+                drawY = (displayHeight - drawHeight) / 2;
                 break;
 
               case 'none':
@@ -264,34 +280,34 @@ export default function CreatePage() {
                 const imageToEdgeRatioX = img.width / actualEdgeWidth;
                 const imageToEdgeRatioY = img.height / actualEdgeHeight;
 
-                drawWidth = imageToEdgeRatioX * canvas.width;
-                drawHeight = imageToEdgeRatioY * canvas.height;
-                drawX = (canvas.width - drawWidth) / 2;
-                drawY = (canvas.height - drawHeight) / 2;
+                drawWidth = imageToEdgeRatioX * displayWidth;
+                drawHeight = imageToEdgeRatioY * displayHeight;
+                drawX = (displayWidth - drawWidth) / 2;
+                drawY = (displayHeight - drawHeight) / 2;
                 break;
 
               case 'extend-sides':
-                const extendFitScale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                const extendFitScale = Math.min(displayWidth / img.width, displayHeight / img.height);
                 const fittedWidth = img.width * extendFitScale;
                 const fittedHeight = img.height * extendFitScale;
-                const fittedX = (canvas.width - fittedWidth) / 2;
-                const fittedY = (canvas.height - fittedHeight) / 2;
+                const fittedX = (displayWidth - fittedWidth) / 2;
+                const fittedY = (displayHeight - fittedHeight) / 2;
 
                 ctx.drawImage(img, fittedX, fittedY, fittedWidth, fittedHeight);
 
                 if (fittedX > 0) {
                   ctx.drawImage(img, 0, 0, 1, img.height, 0, fittedY, fittedX, fittedHeight);
-                  ctx.drawImage(img, img.width - 1, 0, 1, img.height, fittedX + fittedWidth, fittedY, canvas.width - fittedX - fittedWidth, fittedHeight);
+                  ctx.drawImage(img, img.width - 1, 0, 1, img.height, fittedX + fittedWidth, fittedY, displayWidth - fittedX - fittedWidth, fittedHeight);
                 }
                 if (fittedY > 0) {
-                  ctx.drawImage(img, 0, 0, img.width, 1, 0, 0, canvas.width, fittedY);
-                  ctx.drawImage(img, 0, img.height - 1, img.width, 1, 0, fittedY + fittedHeight, canvas.width, canvas.height - fittedY - fittedHeight);
+                  ctx.drawImage(img, 0, 0, img.width, 1, 0, 0, displayWidth, fittedY);
+                  ctx.drawImage(img, 0, img.height - 1, img.width, 1, 0, fittedY + fittedHeight, displayWidth, displayHeight - fittedY - fittedHeight);
                 }
                 return;
 
               default:
-                drawWidth = canvas.width;
-                drawHeight = canvas.height;
+                drawWidth = displayWidth;
+                drawHeight = displayHeight;
                 drawX = 0;
                 drawY = 0;
             }
@@ -309,11 +325,11 @@ export default function CreatePage() {
 
           // Show error state in canvas
           ctx.fillStyle = '#fee2e2';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillRect(0, 0, displayWidth, displayHeight);
           ctx.fillStyle = '#dc2626';
           ctx.font = '12px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText('Failed to load', canvas.width / 2, canvas.height / 2);
+          ctx.fillText('Failed to load', displayWidth / 2, displayHeight / 2);
         };
 
         img.src = imageUrl;
@@ -1475,18 +1491,33 @@ export default function CreatePage() {
                         <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
                           {/* Side Edge */}
                           <div className="flex flex-col items-center space-y-2">
-                            <span className="text-sm font-medium text-gray-600">Side Edge</span>
-                            <div className="relative">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-600">Side Edge Preview</span>
+                              <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
+                                {numLeaves} leaves × {Math.round(bookHeight * 285.7)}px
+                              </span>
+                            </div>
+                            <div className="relative p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl">
                               <canvas
                                 ref={sideEdgeCanvasRef}
-                                className="rounded-lg shadow-lg border border-gray-200 bg-white"
-                                style={{ height: '350px' }}
+                                className="rounded-lg shadow-lg border-2 border-gray-300 bg-white mx-auto block"
+                                style={{
+                                  height: '350px',
+                                  imageRendering: 'pixelated',
+                                  imageRendering: '-moz-crisp-edges',
+                                  imageRendering: 'crisp-edges',
+                                  filter: 'contrast(1.05) brightness(1.02)'
+                                }}
                               />
+                              {/* Scale indicator */}
+                              <div className="absolute bottom-2 right-2 text-xs text-gray-500 bg-white/80 px-2 py-1 rounded">
+                                Scaled for preview
+                              </div>
                               {!canvasReady && (
-                                <div className="absolute inset-0 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                                <div className="absolute inset-4 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
                                   <div className="text-center">
                                     <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                                    <p className="text-sm text-gray-500">Rendering...</p>
+                                    <p className="text-sm text-gray-500">Rendering preview...</p>
                                   </div>
                                 </div>
                               )}
