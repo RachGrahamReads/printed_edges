@@ -1491,12 +1491,7 @@ export default function CreatePage() {
                         <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
                           {/* Side Edge */}
                           <div className="flex flex-col items-center space-y-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-gray-600">Side Edge Preview</span>
-                              <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
-                                {numLeaves} leaves × {Math.round(bookHeight * 285.7)}px
-                              </span>
-                            </div>
+                            <span className="text-sm font-medium text-gray-600">Side Edge Preview</span>
                             <div className="relative p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl">
                               <canvas
                                 ref={sideEdgeCanvasRef}
@@ -1509,10 +1504,6 @@ export default function CreatePage() {
                                   filter: 'contrast(1.05) brightness(1.02)'
                                 }}
                               />
-                              {/* Scale indicator */}
-                              <div className="absolute bottom-2 right-2 text-xs text-gray-500 bg-white/80 px-2 py-1 rounded">
-                                Scaled for preview
-                              </div>
                               {!canvasReady && (
                                 <div className="absolute inset-4 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
                                   <div className="text-center">
