@@ -1,11 +1,11 @@
-import { ThemeSwitcher } from "@/components/theme-switcher";
+import { SiteFooter } from "@/components/site-footer";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { AuthButton } from "@/components/auth-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, FileImage, Upload, CreditCard, Zap, Shield } from "lucide-react";
+import { Check, FileImage, Zap, Shield } from "lucide-react";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -52,13 +52,11 @@ export default async function Home() {
               <>
                 <Link href="/create">
                   <Button size="lg" className="text-lg px-8 py-3">
-                    <Upload className="h-5 w-5 mr-2" />
                     Try it now
                   </Button>
                 </Link>
                 <Link href="/dashboard">
                   <Button variant="outline" size="lg" className="text-lg px-8 py-3">
-                    <FileImage className="h-5 w-5 mr-2" />
                     Login
                   </Button>
                 </Link>
@@ -67,13 +65,11 @@ export default async function Home() {
               <>
                 <Link href="/create">
                   <Button size="lg" className="text-lg px-8 py-3">
-                    <Upload className="h-5 w-5 mr-2" />
                     Try It Free
                   </Button>
                 </Link>
                 <Link href="/pricing">
                   <Button variant="outline" size="lg" className="text-lg px-8 py-3">
-                    <CreditCard className="h-5 w-5 mr-2" />
                     View Pricing
                   </Button>
                 </Link>
@@ -329,9 +325,7 @@ export default async function Home() {
           </Card>
         </div>
 
-        <footer className="w-full flex items-center justify-center border-t mx-auto text-center text-xs gap-8 py-16 mt-16">
-          <ThemeSwitcher />
-        </footer>
+        <SiteFooter />
       </div>
     </main>
   );

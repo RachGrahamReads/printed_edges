@@ -27,43 +27,37 @@ export async function POST(req: NextRequest) {
 
     const product = purchaseType === 'single_image' ? PRODUCTS.SINGLE_IMAGE : PRODUCTS.THREE_IMAGES;
 
-    // Validate discount code if provided
+    // Validate discount code if provided - using Stripe-only validation
     let discountCouponId = null;
     let discountCodeData = null;
 
     if (discountCode) {
-      const { data: discount, error: discountError } = await supabase
-        .from('discount_codes')
-        .select('*')
-        .eq('code', discountCode.toUpperCase())
-        .eq('is_active', true)
-        .single();
+      try {
+        // Try to retrieve the coupon directly from Stripe
+        const coupon = await stripe.coupons.retrieve(discountCode.toLowerCase());
 
-      if (discountError || !discount) {
+        // Check if coupon is valid (not deleted and not redeemed beyond limits)
+        if (coupon.valid) {
+          discountCouponId = coupon.id;
+          // Store basic info for purchase record
+          discountCodeData = {
+            discount_type: coupon.percent_off ? 'percentage' : 'fixed_amount',
+            discount_value: coupon.percent_off || coupon.amount_off || 0,
+            code: discountCode.toUpperCase()
+          };
+        } else {
+          return NextResponse.json(
+            { error: 'Discount code is no longer valid' },
+            { status: 400 }
+          );
+        }
+      } catch (error: any) {
+        // If coupon doesn't exist in Stripe, it's invalid
         return NextResponse.json(
           { error: 'Invalid discount code' },
           { status: 400 }
         );
       }
-
-      // Check if code has expired
-      if (discount.expires_at && new Date(discount.expires_at) < new Date()) {
-        return NextResponse.json(
-          { error: 'Discount code has expired' },
-          { status: 400 }
-        );
-      }
-
-      // Check if usage limit is reached
-      if (discount.usage_limit && discount.usage_count >= discount.usage_limit) {
-        return NextResponse.json(
-          { error: 'Discount code usage limit reached' },
-          { status: 400 }
-        );
-      }
-
-      discountCouponId = discount.stripe_coupon_id;
-      discountCodeData = discount;
     }
 
     // Get or create Stripe customer
@@ -114,7 +108,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       mode: 'payment',
-      success_url: `${req.headers.get('origin')}/dashboard?payment=success&credits=${product.credits}`,
+      success_url: `${req.headers.get('origin')}/dashboard?payment=success&credits=${product.credits}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${req.headers.get('origin')}/pricing?payment=cancelled`,
       metadata: {
         user_id: user.id,

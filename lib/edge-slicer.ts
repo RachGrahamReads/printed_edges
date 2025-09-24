@@ -481,8 +481,8 @@ export async function scaleEdgeImageToBookDimensions(
 export async function createAndStoreRawSlices(
   edgeImages: {
     side?: { base64: string };
-    top?: { base64: string };
-    bottom?: { base64: string };
+    top?: { base64: string } | { color: string };
+    bottom?: { base64: string } | { color: string };
   },
   options: EdgeSlicingOptions,
   sessionId: string
@@ -517,31 +517,55 @@ export async function createAndStoreRawSlices(
   }
 
   if (edgeImages.top && options.pdfDimensions) {
-    const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
-    const targetHeight = numLeaves; // 1 pixel per leaf for slicing
+    if ('color' in edgeImages.top) {
+      // It's a color - create a solid color image
+      const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
+      const targetHeight = numLeaves; // 1 pixel per leaf for slicing
 
-    console.log(`Scaling top edge image to: ${targetWidth} × ${targetHeight}`);
-    scaledEdgeImages.top = {
-      base64: await scaleEdgeImageToBookDimensions(
-        edgeImages.top.base64,
-        { width: targetWidth, height: targetHeight },
-        options.scaleMode || 'fill'
-      )
-    };
+      console.log(`Creating top edge color slice: ${targetWidth} × ${targetHeight}, color: ${edgeImages.top.color}`);
+      scaledEdgeImages.top = {
+        base64: await createColorImage(targetWidth, targetHeight, edgeImages.top.color)
+      };
+    } else {
+      // It's an image - scale normally
+      const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
+      const targetHeight = numLeaves; // 1 pixel per leaf for slicing
+
+      console.log(`Scaling top edge image to: ${targetWidth} × ${targetHeight}`);
+      scaledEdgeImages.top = {
+        base64: await scaleEdgeImageToBookDimensions(
+          edgeImages.top.base64,
+          { width: targetWidth, height: targetHeight },
+          options.scaleMode || 'fill'
+        )
+      };
+    }
   }
 
   if (edgeImages.bottom && options.pdfDimensions) {
-    const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
-    const targetHeight = numLeaves; // 1 pixel per leaf for slicing
+    if ('color' in edgeImages.bottom) {
+      // It's a color - create a solid color image
+      const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
+      const targetHeight = numLeaves; // 1 pixel per leaf for slicing
 
-    console.log(`Scaling bottom edge image to: ${targetWidth} × ${targetHeight}`);
-    scaledEdgeImages.bottom = {
-      base64: await scaleEdgeImageToBookDimensions(
-        edgeImages.bottom.base64,
-        { width: targetWidth, height: targetHeight },
-        options.scaleMode || 'fill'
-      )
-    };
+      console.log(`Creating bottom edge color slice: ${targetWidth} × ${targetHeight}, color: ${edgeImages.bottom.color}`);
+      scaledEdgeImages.bottom = {
+        base64: await createColorImage(targetWidth, targetHeight, edgeImages.bottom.color)
+      };
+    } else {
+      // It's an image - scale normally
+      const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
+      const targetHeight = numLeaves; // 1 pixel per leaf for slicing
+
+      console.log(`Scaling bottom edge image to: ${targetWidth} × ${targetHeight}`);
+      scaledEdgeImages.bottom = {
+        base64: await scaleEdgeImageToBookDimensions(
+          edgeImages.bottom.base64,
+          { width: targetWidth, height: targetHeight },
+          options.scaleMode || 'fill'
+        )
+      };
+    }
   }
 
   // Create raw slices from pre-scaled images (no scale mode needed now)
@@ -1267,5 +1291,28 @@ async function blobToBase64(blob: Blob): Promise<string> {
     };
     reader.onerror = reject;
     reader.readAsDataURL(blob);
+  });
+}
+
+// Helper function to create a solid color image
+async function createColorImage(width: number, height: number, color: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+
+      canvas.width = width;
+      canvas.height = height;
+
+      // Fill with the specified color
+      ctx.fillStyle = color === 'black' ? '#000000' : color;
+      ctx.fillRect(0, 0, width, height);
+
+      // Convert to base64
+      const base64 = canvas.toDataURL('image/png').split(',')[1];
+      resolve(base64);
+    } catch (error) {
+      reject(error);
+    }
   });
 }

@@ -17,8 +17,10 @@ import {
   AlertCircle,
   Pipette
 } from "lucide-react";
+import { SiteFooter } from "@/components/site-footer";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { processPDFWithChunking } from '@/lib/process-with-chunking';
 
 export default function CreatePage() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -44,8 +46,17 @@ export default function CreatePage() {
   const [pdfPages, setPdfPages] = useState<string[]>([]);
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
+  const [credits, setCredits] = useState<{ total_credits: number; used_credits: number } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showBleedZones, setShowBleedZones] = useState(true);
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [processingStep, setProcessingStep] = useState('');
+  const [processedPdfUrl, setProcessedPdfUrl] = useState<string | null>(null);
+  const [processingError, setProcessingError] = useState<string | null>(null);
   const [canvasReady, setCanvasReady] = useState(false);
+  const [isSavingDesign, setIsSavingDesign] = useState(false);
+  const [savedDesignName, setSavedDesignName] = useState<string | null>(null);
+
 
   const scaleModeInfoRef = useRef<HTMLDivElement>(null);
   const topEdgeCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -55,12 +66,31 @@ export default function CreatePage() {
   const supabase = createClient();
   const numLeaves = Math.ceil(totalPages / 2);
 
-  // Check auth status on mount
+  // Check auth status and fetch credits on mount
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    const loadUserData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
-    });
+
+      // Fetch credits if user is logged in
+      if (user) {
+        try {
+          const response = await fetch('/api/dashboard/user-data');
+          if (response.ok) {
+            const data = await response.json();
+            if (data.credits) {
+              setCredits(data.credits);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching credits:', error);
+        }
+      }
+    };
+
+    loadUserData();
   }, []);
+
 
   // Close scale mode info when clicking outside
   useEffect(() => {
@@ -189,20 +219,42 @@ export default function CreatePage() {
           return;
         }
 
-        // Set canvas dimensions - always 350px height for consistency
-        const fixedHeight = 350;
+        // Set canvas dimensions to match physical book edge ratios
+        const PAPER_THICKNESS_INCHES = 0.0035; // Standard paper thickness
+        const FIXED_SIDE_HEIGHT = 300; // Always keep side edge preview at 300px height
 
         if (edgeType === 'side') {
-          // Side edge: fixed height, width based on thickness ratio
-          canvas.height = fixedHeight;
-          const thicknessRatio = numLeaves / (bookHeight * 285.7);
-          canvas.width = Math.max(thicknessRatio * fixedHeight, 40); // Minimum 40px for better visibility
+          // Side edge: fixed height (300px), width based on physical thickness ratio
+          canvas.height = FIXED_SIDE_HEIGHT;
+
+          // Calculate actual book height including bleed
+          const actualBookHeight = bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight;
+
+          // Physical edge dimensions
+          const physicalEdgeWidth = numLeaves * PAPER_THICKNESS_INCHES; // e.g., 60 leaves × 0.0035" = 0.21"
+          const physicalEdgeHeight = actualBookHeight; // e.g., 8.25" with bleed
+
+          // Calculate canvas width based on physical ratio
+          const physicalRatio = physicalEdgeWidth / physicalEdgeHeight; // e.g., 0.21" / 8.25" = 0.0255
+          canvas.width = Math.max(FIXED_SIDE_HEIGHT * physicalRatio, 8); // Minimum 8px width
+
+          console.log(`Side edge physical: ${physicalEdgeWidth.toFixed(3)}" × ${physicalEdgeHeight}" (ratio: ${physicalRatio.toFixed(4)})`);
+          console.log(`Side edge canvas: ${canvas.width}px × ${canvas.height}px`);
         } else {
-          // Top/bottom edge: width based on book width ratio, height based on thickness
-          const widthRatio = bookWidth / bookHeight;
-          canvas.width = fixedHeight * widthRatio;
-          const thicknessRatio = numLeaves / (bookWidth * 285.7);
-          canvas.height = Math.max(thicknessRatio * canvas.width, 20);
+          // Top/bottom edge: width and height based on physical thickness ratio
+          const actualBookWidth = bleedType === "add_bleed" ? bookWidth + 0.125 : bookWidth; // Outer edge bleed only
+
+          // Physical edge dimensions
+          const physicalEdgeWidth = actualBookWidth; // e.g., 5.125" with bleed
+          const physicalEdgeHeight = numLeaves * PAPER_THICKNESS_INCHES; // e.g., 60 leaves × 0.0035" = 0.21"
+
+          // Calculate canvas dimensions based on physical ratio
+          const physicalRatio = physicalEdgeWidth / physicalEdgeHeight; // e.g., 5.125" / 0.21" = 24.4
+          canvas.width = 400; // Fixed reasonable width for top/bottom
+          canvas.height = Math.max(canvas.width / physicalRatio, 8); // Minimum 8px height
+
+          console.log(`Top/bottom edge physical: ${physicalEdgeWidth}" × ${physicalEdgeHeight.toFixed(3)}" (ratio: ${physicalRatio.toFixed(1)}:1)`);
+          console.log(`Top/bottom edge canvas: ${canvas.width}px × ${canvas.height}px`);
         }
 
         // Set high DPI for sharper rendering
@@ -218,7 +270,7 @@ export default function CreatePage() {
         ctx.scale(dpr, dpr);
 
         // Clear canvas and show loading state
-        ctx.fillStyle = '#f8f9fa';
+        ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, displayWidth, displayHeight);
 
         // Add loading indicator
@@ -232,7 +284,7 @@ export default function CreatePage() {
         img.onload = () => {
           try {
             // Clear canvas again
-            ctx.fillStyle = '#f8f9fa';
+            ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, displayWidth, displayHeight);
 
             // Enable image smoothing for better quality
@@ -270,20 +322,31 @@ export default function CreatePage() {
                 break;
 
               case 'none':
-                const actualEdgeWidth = edgeType === 'side' ?
-                  numLeaves :
-                  Math.round(bookWidth * 285.7);
-                const actualEdgeHeight = edgeType === 'side' ?
-                  Math.round(bookHeight * 285.7) :
-                  numLeaves;
+                // For 'none' mode: show image at actual size scaled to preview
+                // Calculate recommended image dimensions in pixels (same as processing logic)
+                const noneActualBookWidth = bleedType === "add_bleed" ? bookWidth + 0.125 : bookWidth;
+                const noneActualBookHeight = bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight;
 
-                const imageToEdgeRatioX = img.width / actualEdgeWidth;
-                const imageToEdgeRatioY = img.height / actualEdgeHeight;
+                const recommendedWidth = edgeType === 'side' ?
+                  numLeaves : // Side: 1px per leaf
+                  Math.round(noneActualBookWidth * 285.7); // Top/bottom: book width in pixels
+                const recommendedHeight = edgeType === 'side' ?
+                  Math.round(noneActualBookHeight * 285.7) : // Side: book height in pixels
+                  numLeaves; // Top/bottom: 1px per leaf
 
-                drawWidth = imageToEdgeRatioX * displayWidth;
-                drawHeight = imageToEdgeRatioY * displayHeight;
+                // Scale recommended dimensions to fit preview canvas
+                const previewScale = edgeType === 'side' ?
+                  displayHeight / recommendedHeight : // Side: scale based on height
+                  displayWidth / recommendedWidth; // Top/bottom: scale based on width
+
+                // Scale the actual image by the same ratio
+                drawWidth = img.width * previewScale;
+                drawHeight = img.height * previewScale;
                 drawX = (displayWidth - drawWidth) / 2;
                 drawY = (displayHeight - drawHeight) / 2;
+
+                console.log(`None mode: Recommended ${recommendedWidth}×${recommendedHeight}px, Preview scale: ${(previewScale*100).toFixed(1)}%`);
+                console.log(`None mode: Image ${img.width}×${img.height}px → Draw ${drawWidth.toFixed(1)}×${drawHeight.toFixed(1)}px`);
                 break;
 
               case 'extend-sides':
@@ -303,6 +366,33 @@ export default function CreatePage() {
                   ctx.drawImage(img, 0, 0, img.width, 1, 0, 0, displayWidth, fittedY);
                   ctx.drawImage(img, 0, img.height - 1, img.width, 1, 0, fittedY + fittedHeight, displayWidth, displayHeight - fittedY - fittedHeight);
                 }
+
+                // Add overlay zones for extended mode as well
+                if (edgeType === 'side' && showBleedZones) {
+                  const actualHeight = bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight;
+                  const bleedHeightInches = 0.125;
+                  const bufferHeightInches = 0.125;
+                  const bleedHeightPx = (bleedHeightInches / actualHeight) * displayHeight;
+                  const bufferHeightPx = (bufferHeightInches / actualHeight) * displayHeight;
+
+                  console.log(`Extended preview zones - Bleed type: ${bleedType}, Display: ${displayWidth}x${displayHeight}, Bleed: ${bleedHeightPx}px, Buffer: ${bufferHeightPx}px`);
+
+                  // Draw bleed zones (red) - always show as they represent final book dimensions
+                  console.log('Drawing red bleed zones (extended)');
+                  ctx.fillStyle = 'rgba(220, 53, 69, 0.4)';
+                  ctx.fillRect(0, 0, displayWidth, Math.max(bleedHeightPx, 4));
+                  ctx.fillRect(0, displayHeight - Math.max(bleedHeightPx, 4), displayWidth, Math.max(bleedHeightPx, 4));
+
+                  // Draw buffer zones (blue) - positioned inside the bleed zones
+                  console.log('Drawing blue buffer zones (extended)');
+                  ctx.fillStyle = 'rgba(0, 123, 255, 0.4)';
+                  const bufferTop = Math.max(bleedHeightPx, 4); // Always inside the bleed zone
+                  const bufferBottom = Math.max(bleedHeightPx, 4); // Always inside the bleed zone
+                  ctx.fillRect(0, bufferTop, displayWidth, Math.max(bufferHeightPx, 4));
+                  ctx.fillRect(0, displayHeight - bufferBottom - Math.max(bufferHeightPx, 4), displayWidth, Math.max(bufferHeightPx, 4));
+
+                }
+
                 return;
 
               default:
@@ -313,6 +403,40 @@ export default function CreatePage() {
             }
 
             ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+            // Add bleed and buffer zone overlays for side edges only
+            if (edgeType === 'side' && showBleedZones) {
+              const actualHeight = bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight;
+
+              // Calculate zone heights in display coordinates
+              const bleedHeightInches = 0.125; // 0.125" bleed
+              const bufferHeightInches = 0.125; // 0.125" buffer
+
+              const bleedHeightPx = (bleedHeightInches / actualHeight) * displayHeight;
+              const bufferHeightPx = (bufferHeightInches / actualHeight) * displayHeight;
+
+              console.log(`Preview zones - Bleed type: ${bleedType}, Display: ${displayWidth}x${displayHeight}, Bleed: ${bleedHeightPx}px, Buffer: ${bufferHeightPx}px`);
+
+              // Draw bleed zones (red, semi-transparent) - always show as they represent the final book dimensions
+              console.log('Drawing red bleed zones');
+              ctx.fillStyle = 'rgba(220, 53, 69, 0.4)';
+              // Top bleed
+              ctx.fillRect(0, 0, displayWidth, Math.max(bleedHeightPx, 4)); // Minimum 4px for visibility
+              // Bottom bleed
+              ctx.fillRect(0, displayHeight - Math.max(bleedHeightPx, 4), displayWidth, Math.max(bleedHeightPx, 4));
+
+              // Draw buffer zones (blue, semi-transparent) - positioned inside the bleed zones
+              console.log('Drawing blue buffer zones');
+              ctx.fillStyle = 'rgba(0, 123, 255, 0.4)';
+              const bufferTop = Math.max(bleedHeightPx, 4); // Always inside the bleed zone
+              const bufferBottom = Math.max(bleedHeightPx, 4); // Always inside the bleed zone
+
+              // Top buffer (inside bleed zone)
+              ctx.fillRect(0, bufferTop, displayWidth, Math.max(bufferHeightPx, 4));
+              // Bottom buffer (inside bleed zone)
+              ctx.fillRect(0, displayHeight - bufferBottom - Math.max(bufferHeightPx, 4), displayWidth, Math.max(bufferHeightPx, 4));
+
+            }
           } catch (error) {
             console.error('Error drawing image to canvas:', error);
             setPreviewError('Failed to render edge preview');
@@ -338,7 +462,7 @@ export default function CreatePage() {
         setPreviewError(`Rendering error: ${error.message}`);
       }
     });
-  }, [scaleMode, numLeaves, bookWidth, bookHeight]);
+  }, [scaleMode, numLeaves, bookWidth, bookHeight, bleedType, showBleedZones]);
 
   // Update edge previews when images or scale mode changes
   useEffect(() => {
@@ -351,13 +475,105 @@ export default function CreatePage() {
     if (sideEdgeImage && numLeaves > 0 && sideEdgeCanvasRef.current && showPreview) {
       renderEdgePreview(sideEdgeImage, 'side', sideEdgeCanvasRef);
     }
-  }, [sideEdgeImage, scaleMode, numLeaves, bookWidth, bookHeight, renderEdgePreview, showPreview]);
+  }, [sideEdgeImage, scaleMode, numLeaves, bookWidth, bookHeight, renderEdgePreview, showPreview, showBleedZones]);
 
   useEffect(() => {
     if (bottomEdgeImage && numLeaves > 0 && bottomEdgeCanvasRef.current && showPreview) {
       renderEdgePreview(bottomEdgeImage, 'bottom', bottomEdgeCanvasRef);
     }
   }, [bottomEdgeImage, scaleMode, numLeaves, bookWidth, bookHeight, renderEdgePreview, showPreview]);
+
+  // Generate template function
+  const generateTemplate = () => {
+    if (!pdfFile || totalPages === 0) return;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Calculate paper thickness and edge dimensions
+    const PAPER_THICKNESS_INCHES = 0.0035; // Standard paper thickness
+    const numLeaves = Math.ceil(totalPages / 2);
+    const totalThickness = numLeaves * PAPER_THICKNESS_INCHES;
+
+    // Calculate template dimensions
+    const templateWidth = totalThickness * 300; // Width in pixels at 300 DPI
+    const templateHeight = (bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300; // Height in pixels at 300 DPI
+
+    canvas.width = templateWidth;
+    canvas.height = templateHeight;
+
+    // Fill with light background
+    ctx.fillStyle = '#f8f9fa';
+    ctx.fillRect(0, 0, templateWidth, templateHeight);
+
+    // Calculate zones
+    const bleedMargin = 0.125 * 300; // 0.125" in pixels at 300 DPI
+    const bufferMargin = 0.125 * 300; // Additional 0.125" buffer zone
+
+    // Draw bleed zones (50% transparent red) only if we're adding bleed
+    if (bleedType === "add_bleed") {
+      ctx.fillStyle = 'rgba(220, 53, 69, 0.5)';
+      // Top bleed zone
+      ctx.fillRect(0, 0, templateWidth, bleedMargin);
+      // Bottom bleed zone
+      ctx.fillRect(0, templateHeight - bleedMargin, templateWidth, bleedMargin);
+    }
+
+    // Draw buffer zones (50% transparent blue)
+    const bufferTop = bleedType === "add_bleed" ? bleedMargin : 0;
+    const bufferBottom = bleedType === "add_bleed" ? bleedMargin : 0;
+
+    ctx.fillStyle = 'rgba(0, 123, 255, 0.5)';
+    // Top buffer zone
+    ctx.fillRect(0, bufferTop, templateWidth, bufferMargin);
+    // Bottom buffer zone
+    ctx.fillRect(0, templateHeight - bufferBottom - bufferMargin, templateWidth, bufferMargin);
+
+    // Draw main design area (safe zone) border - REMOVED
+    // ctx.strokeStyle = '#28a745';
+    // ctx.setLineDash([]);
+    // ctx.lineWidth = 2;
+    // const safeTop = bufferTop + bufferMargin;
+    // const safeHeight = templateHeight - bufferTop - bufferBottom - (2 * bufferMargin);
+    // ctx.strokeRect(0, safeTop, templateWidth, safeHeight);
+
+    // Add rotated text instructions (90 degrees)
+    ctx.save();
+    ctx.translate(templateWidth / 2, templateHeight / 2);
+    ctx.rotate(Math.PI / 2); // 90 degrees
+
+    // Calculate font sizes based on template width (narrow templates need smaller fonts)
+    const baseFontSize = Math.max(Math.min(templateWidth / 8, 24), 10); // Scale with width, min 10px, max 24px
+    const smallFontSize = Math.max(Math.min(templateWidth / 10, 18), 8); // Scale with width, min 8px, max 18px
+    const lineSpacing = baseFontSize * 1.2; // Tighter line spacing
+
+    ctx.fillStyle = '#495057';
+    ctx.font = `${baseFontSize}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+
+    ctx.fillText('Side Edge Template', 0, -lineSpacing * 3);
+    ctx.fillText(`${Math.round(templateWidth)} × ${Math.round(templateHeight)}px`, 0, -lineSpacing * 2);
+    ctx.fillText(`${bookWidth}" × ${bookHeight}" • ${totalPages}p`, 0, -lineSpacing);
+
+    ctx.font = `${smallFontSize}px Arial, sans-serif`;
+    // ctx.fillStyle = '#28a745';
+    // ctx.fillText('Safe area (green)', 0, lineSpacing * 0.5);
+    if (bleedType === "add_bleed") {
+      ctx.fillStyle = '#dc3545';
+      ctx.fillText('Bleed (red)', 0, lineSpacing * 1.5);
+    }
+    ctx.fillStyle = '#007bff';
+    ctx.fillText('Buffer (blue)', 0, lineSpacing * 2.5);
+
+    ctx.restore();
+
+    // Download the template
+    const link = document.createElement('a');
+    link.download = `side-edge-template-${bookWidth}x${bookHeight}-${totalPages}pages.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
 
   // Trigger edge preview rendering when switching to edge view mode
   useEffect(() => {
@@ -630,12 +846,229 @@ export default function CreatePage() {
     }
   };
 
-  const handleProcessPdf = () => {
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove data:image/...;base64, or data:application/pdf;base64, prefix
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  const imageFileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove data:image/...;base64, prefix
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  const autoSaveDesignWithPdfData = async () => {
+    if (!user) {
+      return;
+    }
+
+    if (!sideEdgeImageFile && !topEdgeImageFile && !bottomEdgeImageFile) {
+      return;
+    }
+
+    try {
+      setIsSavingDesign(true);
+
+      // Generate automatic name
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      const autoName = `Design ${bookWidth}"×${bookHeight}" - ${dateStr}`;
+
+      // Convert files to base64 for upload
+      const edgeFiles: any = {};
+
+      if (sideEdgeImageFile) {
+        edgeFiles.side = await fileToBase64(sideEdgeImageFile);
+      }
+      if (topEdgeImageFile) {
+        edgeFiles.top = await fileToBase64(topEdgeImageFile);
+      }
+      if (bottomEdgeImageFile) {
+        edgeFiles.bottom = await fileToBase64(bottomEdgeImageFile);
+      }
+
+      const designData = {
+        name: autoName,
+        edgeFiles,
+        pdfWidth: bookWidth,
+        pdfHeight: bookHeight,
+        pageCount: totalPages,
+        bleedType: bleedType,
+        edgeType: 'all-edges' // Always all-edges for now
+      };
+
+      const response = await fetch('/api/edge-designs/save-with-pdf-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(designData)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSavedDesignName(autoName);
+        console.log('Design automatically saved:', autoName);
+      } else {
+        console.error('Failed to auto-save design');
+      }
+    } catch (error) {
+      console.error('Error auto-saving design:', error);
+    } finally {
+      setIsSavingDesign(false);
+    }
+  };
+
+  const handleProcessPdf = async () => {
     if (!user) {
       window.location.href = '/auth/signup';
-    } else {
-      alert('You need credits to process PDFs. Visit the pricing page to purchase credits.');
-      window.location.href = '/pricing';
+      return;
+    }
+
+    // Pre-processing credit check (fresh verification before starting)
+    try {
+      const creditCheckResponse = await fetch('/api/credits/check');
+      if (!creditCheckResponse.ok) {
+        throw new Error('Failed to verify credits');
+      }
+
+      const creditData = await creditCheckResponse.json();
+
+      if (!creditData.hasCredits) {
+        alert('You need credits to process PDFs. Visit the pricing page to purchase credits.');
+        window.location.href = '/pricing';
+        return;
+      }
+    } catch (error) {
+      console.error('Credit check failed:', error);
+      alert('Unable to verify credits. Please try again.');
+      return;
+    }
+
+    // Validate required files
+    if (!pdfFile) {
+      alert('Please upload a PDF file first.');
+      return;
+    }
+
+    if (!sideEdgeImageFile && topEdgeColor === "none" && bottomEdgeColor === "none") {
+      alert('Please upload a side edge image or select top/bottom edge colors.');
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      setProcessingProgress(0);
+      setProcessingStep('Preparing files...');
+      setProcessingError(null);
+      setProcessedPdfUrl(null);
+
+      // Prepare edge data (always all-edges mode)
+      const edgeData: any = {};
+
+      // Handle side edge (always file for now)
+      if (sideEdgeImageFile) edgeData.side = sideEdgeImageFile;
+
+      // Handle top edge (color only for now)
+      if (topEdgeColor !== "none") {
+        edgeData.top = topEdgeColor === "black" ? "#000000" : topEdgeColor;
+      }
+
+      // Handle bottom edge (color only for now)
+      if (bottomEdgeColor !== "none") {
+        edgeData.bottom = bottomEdgeColor === "black" ? "#000000" : bottomEdgeColor;
+      }
+
+      setProcessingStep('Processing PDF...');
+
+      // Use chunking workflow for all PDFs (now with storage-based slicing)
+      const result = await processPDFWithChunking(
+        pdfFile,
+        edgeData,
+        {
+          numPages: totalPages,
+          pageType: 'standard', // Fixed value since we no longer use page type calculations
+          bleedType: bleedType as 'add_bleed' | 'existing_bleed',
+          edgeType: 'all-edges', // Always use all-edges mode
+          trimWidth: bookWidth,
+          trimHeight: bookHeight,
+          scaleMode: 'fill' // Default scale mode
+        },
+        (progress) => setProcessingProgress(progress)
+      );
+
+      setProcessingStep('Complete!');
+      setProcessingProgress(100);
+
+      // Convert the result to a data URL for download
+      const blob = new Blob([result], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      setProcessedPdfUrl(url);
+
+      // Post-processing: Deduct credit and update local state
+      try {
+        const deductResponse = await fetch('/api/credits/deduct', {
+          method: 'POST'
+        });
+
+        if (deductResponse.ok) {
+          const deductData = await deductResponse.json();
+
+          // Update local credits with server response
+          if (credits) {
+            setCredits({
+              ...credits,
+              total_credits: deductData.totalCredits,
+              used_credits: deductData.usedCredits
+            });
+          }
+        } else {
+          console.warn('Failed to deduct credit, but PDF was processed successfully');
+        }
+      } catch (error) {
+        console.error('Credit deduction failed:', error);
+        // Don't block the user - PDF was processed successfully
+      }
+
+      // Auto-save the design after successful processing
+      if (user) {
+        autoSaveDesignWithPdfData();
+      }
+
+      // Show success message
+      setTimeout(() => {
+        setIsProcessing(false);
+      }, 1000);
+
+    } catch (error) {
+      console.error('PDF processing error:', error);
+      setProcessingError(error instanceof Error ? error.message : 'Unknown error occurred');
+      setIsProcessing(false);
+      setProcessingProgress(0);
+      setProcessingStep('');
     }
   };
 
@@ -650,6 +1083,12 @@ export default function CreatePage() {
           </Link>
 
           <div className="flex gap-4 items-center">
+            {user && credits && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <CreditCard className="h-3 w-3" />
+                {credits.total_credits - credits.used_credits} credits
+              </Badge>
+            )}
             <Link href="/pricing">
               <Button variant="ghost" size="sm">Pricing</Button>
             </Link>
@@ -671,10 +1110,17 @@ export default function CreatePage() {
         </nav>
 
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-4">Try Our Edge Creator</h1>
+          {user && (
+            <div className="mb-2">
+              <p className="text-lg font-medium text-gray-700">
+                Hi, {user.user_metadata?.first_name || user.email?.split('@')[0]}!
+              </p>
+            </div>
+          )}
+          <h1 className="text-4xl font-bold mb-4">Printed Edge Generator</h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Upload a PDF and edge images to see how your custom book edges will look.
-            {!user && " Sign up to process and download your files."}
+            {!user && " Sign in to process and download your files."}
           </p>
         </div>
 
@@ -751,9 +1197,23 @@ export default function CreatePage() {
                   </div>
 
                   <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                    <p className="text-sm font-medium text-blue-800 mb-1">Recommended Image Size:</p>
-                    <p className="text-xs text-blue-700">Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 285.7).toFixed(0)}px minimum</p>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-blue-800 mb-1">Recommended Image Size:</p>
+                        <p className="text-xs text-blue-700">Side: {numLeaves} × {((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 285.7).toFixed(0)}px minimum</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={generateTemplate}
+                        className="ml-4 text-xs"
+                      >
+                        📄 Download Template
+                      </Button>
+                    </div>
                   </div>
+
 
                   {/* Side Edge Image */}
                   <div className="bg-white p-4 rounded-lg border border-gray-200">
@@ -1009,8 +1469,7 @@ export default function CreatePage() {
                       </>
                     ) : (
                       <>
-                        <Eye className="h-4 w-4 mr-2" />
-                        📖 Preview Design
+                        Preview Design
                       </>
                     )}
                   </Button>
@@ -1025,13 +1484,78 @@ export default function CreatePage() {
                         <Lock className="h-4 w-4 mr-2" />
                         Sign Up to Process PDF
                       </>
+                    ) : isProcessing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
+                        {processingStep || 'Processing...'}
+                      </>
                     ) : (
                       <>
-                        <CreditCard className="h-4 w-4 mr-2" />
-                        🔄 Process PDF (Requires Credits)
+                        Process PDF
                       </>
                     )}
                   </Button>
+
+                  {/* Progress Bar */}
+                  {isProcessing && (
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${processingProgress}%` }}
+                      ></div>
+                    </div>
+                  )}
+
+                  {/* Processing Error */}
+                  {processingError && (
+                    <div className="text-red-600 text-sm mt-2 p-2 bg-red-50 rounded border border-red-200">
+                      <AlertCircle className="h-4 w-4 inline mr-1" />
+                      {processingError}
+                    </div>
+                  )}
+
+                  {/* Success State */}
+                  {processedPdfUrl && !isProcessing && (
+                    <div className="space-y-3">
+                      <div className="text-green-600 text-sm p-2 bg-green-50 rounded border border-green-200">
+                        <CheckCircle className="h-4 w-4 inline mr-1" />
+                        PDF processed successfully!
+                        <a
+                          href={processedPdfUrl}
+                          download="processed-pdf.pdf"
+                          className="ml-2 text-blue-600 underline hover:text-blue-800"
+                        >
+                          Download PDF
+                        </a>
+                      </div>
+
+                      {/* Auto-Save Notification */}
+                      {user && (isSavingDesign || savedDesignName) && (
+                        <div className="border border-green-200 bg-green-50 p-3 rounded">
+                          <div className="flex items-center gap-2">
+                            {isSavingDesign ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+                                <span className="text-sm text-green-800">Saving design automatically...</span>
+                              </>
+                            ) : savedDesignName ? (
+                              <>
+                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                <span className="text-sm text-green-800">
+                                  Design saved as "{savedDesignName}"
+                                </span>
+                              </>
+                            ) : null}
+                          </div>
+                          {savedDesignName && (
+                            <div className="text-xs text-green-700 mt-1">
+                              View and manage your saved designs in the <a href="/dashboard" className="underline font-medium">dashboard</a>.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {!user && (
                     <p className="text-xs text-center text-muted-foreground">
@@ -1490,9 +2014,21 @@ export default function CreatePage() {
                   {sideEdgeImage && (
                     <div className="w-full bg-gradient-to-b from-gray-50 to-gray-100 p-6 rounded-lg">
                       <div className="flex flex-col items-center space-y-6">
-                        <h3 className="text-lg font-medium text-gray-800 mb-4">Your Edge Design Preview</h3>
+                        <div className="flex items-center justify-between w-full max-w-4xl mb-4">
+                          <h3 className="text-lg font-medium text-gray-800">Your Edge Design Preview</h3>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowBleedZones(!showBleedZones)}
+                            className="flex items-center gap-2"
+                          >
+                            <Eye className="h-4 w-4" />
+                            {showBleedZones ? 'Hide' : 'Show'} Zones
+                          </Button>
+                        </div>
                         <div className="text-sm text-gray-600 text-center">
                           Showing how your edges will appear with "{scaleMode}" scaling
+                          {showBleedZones && <span> • <span className="text-red-600">Red</span> = Bleed zones, <span className="text-blue-600">Blue</span> = Buffer zones</span>}
                         </div>
 
                         <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
@@ -1578,42 +2114,9 @@ export default function CreatePage() {
           </Card>
         </div>
 
-        {/* Call to Action */}
-        <div className="mt-12 text-center">
-          <Card className="max-w-2xl mx-auto bg-gradient-to-r from-blue-50 to-purple-50">
-            <CardContent className="p-8">
-              <h2 className="text-2xl font-bold mb-4">Ready to Create Your Book?</h2>
-              <p className="text-muted-foreground mb-6">
-                {!user
-                  ? "Sign up for free to start processing your PDFs with custom edge designs."
-                  : "Purchase credits to process unlimited PDFs with your custom edge designs."
-                }
-              </p>
-              <div className="flex gap-4 justify-center">
-                {!user ? (
-                  <>
-                    <Link href="/auth/signup">
-                      <Button size="lg">Create Free Account</Button>
-                    </Link>
-                    <Link href="/pricing">
-                      <Button variant="outline" size="lg">View Pricing</Button>
-                    </Link>
-                  </>
-                ) : (
-                  <>
-                    <Link href="/pricing">
-                      <Button size="lg">Purchase Credits</Button>
-                    </Link>
-                    <Link href="/dashboard">
-                      <Button variant="outline" size="lg">Go to Dashboard</Button>
-                    </Link>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
+
+      <SiteFooter />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import Stripe from 'stripe';
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const supabase = await createClient();
+  const supabase = createServiceRoleClient();
 
   try {
     switch (event.type) {

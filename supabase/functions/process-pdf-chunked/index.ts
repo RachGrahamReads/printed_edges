@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const CHUNK_SIZE = 30; // Process 30 pages at a time
+const CHUNK_SIZE = 10; // Process 10 pages at a time (consistent with chunking)
 const BLEED_INCHES = 0.125;
 const SAFETY_BUFFER_INCHES = 0.125;
 const POINTS_PER_INCH = 72;
@@ -142,21 +142,21 @@ async function processChunkWithEdges(
 
   if (edgeType === "side-only") {
     const { data: sideEdgeData } = await supabase.storage
-      .from("edges")
+      .from("edge-images")
       .download(edgePaths.side);
     edgeImages.side = await sideEdgeData.arrayBuffer();
   } else {
     // Download all edge images for all-edges mode
     if (edgePaths.side) {
-      const { data } = await supabase.storage.from("edges").download(edgePaths.side);
+      const { data } = await supabase.storage.from("edge-images").download(edgePaths.side);
       edgeImages.side = await data.arrayBuffer();
     }
     if (edgePaths.top) {
-      const { data } = await supabase.storage.from("edges").download(edgePaths.top);
+      const { data } = await supabase.storage.from("edge-images").download(edgePaths.top);
       edgeImages.top = await data.arrayBuffer();
     }
     if (edgePaths.bottom) {
-      const { data } = await supabase.storage.from("edges").download(edgePaths.bottom);
+      const { data } = await supabase.storage.from("edge-images").download(edgePaths.bottom);
       edgeImages.bottom = await data.arrayBuffer();
     }
   }

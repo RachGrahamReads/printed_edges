@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 
 // Constants
@@ -82,8 +83,8 @@ serve(async (req) => {
 
     if (requestData.bleedType === "add_bleed") {
       bleedPoints = BLEED_POINTS;
-      newWidth = originalWidth + bleedPoints;
-      newHeight = originalHeight + (2 * bleedPoints);
+      newWidth = originalWidth + bleedPoints; // Only add 0.125" total (outer edge only)
+      newHeight = originalHeight + (2 * bleedPoints); // Add 0.125" top and bottom
     }
 
     console.log(`Original size: ${originalWidth}x${originalHeight}`);
@@ -123,8 +124,14 @@ serve(async (req) => {
       let xOffset = 0;
       let yOffset = requestData.bleedType === "add_bleed" ? bleedPoints : 0;
 
-      if (requestData.bleedType === "add_bleed" && globalPageIndex % 2 === 1) {
-        xOffset = bleedPoints; // Left pages need offset
+      if (requestData.bleedType === "add_bleed") {
+        // For outer-edge bleed: only even pages (left side) get offset
+        // Odd pages stay at x=0 (bleed extends to the right)
+        // Even pages get offset to make bleed extend to the left
+        if (globalPageIndex % 2 === 0) {
+          xOffset = bleedPoints; // Even pages (left side): content offset right, bleed on left
+        }
+        // Odd pages (right side): xOffset = 0, content at left, bleed extends right
       }
 
       // Copy the page contents using embedPage instead of drawPage
@@ -184,11 +191,12 @@ serve(async (req) => {
 
     console.log("Finished processing all pages in chunk, saving...");
 
-    // Save the processed chunk
+    // Save the processed chunk (optimized for performance)
     const processedBytes = await processedDoc.save({
       useObjectStreams: false,
       addDefaultPage: false,
-      objectsPerTick: 50,
+      objectsPerTick: 25, // Reduced for less CPU per iteration
+      updateFieldAppearances: false, // Skip field appearance updates
     });
 
     console.log(`Processed chunk size: ${processedBytes.length} bytes`);

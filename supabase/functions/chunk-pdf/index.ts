@@ -5,9 +5,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 
-const CHUNK_SIZE = 20; // Pages per chunk
+const CHUNK_SIZE = 1; // Single page per chunk (minimize CPU usage per Edge Function call)
 
 interface ChunkRequest {
   sessionId: string;
@@ -72,11 +73,12 @@ serve(async (req) => {
       // Add all copied pages to the chunk PDF
       copiedPages.forEach(page => chunkPdf.addPage(page));
 
-      // Save the chunk
+      // Save the chunk (optimized for performance)
       const chunkBytes = await chunkPdf.save({
         useObjectStreams: false,
         addDefaultPage: false,
-        objectsPerTick: 50,
+        objectsPerTick: 25, // Reduced for less CPU per iteration
+        updateFieldAppearances: false, // Skip field appearance updates
       });
 
       // Upload chunk to storage

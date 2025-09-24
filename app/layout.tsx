@@ -9,8 +9,31 @@ const defaultUrl = process.env.VERCEL_URL
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "Next.js and Supabase Starter Kit",
-  description: "The fastest way to build apps with Next.js and Supabase",
+  title: "Printed Edges - Add Gilded Edges to Your PDFs",
+  description: "Transform your PDFs with beautiful gilded edges. Perfect for print-on-demand books, journals, and professional documents. Upload your PDF and choose from stunning edge designs.",
+  keywords: ["PDF", "gilded edges", "print on demand", "book design", "PDF processing", "edge effects"],
+  authors: [{ name: "Printed Edges" }],
+  openGraph: {
+    title: "Printed Edges - Add Gilded Edges to Your PDFs",
+    description: "Transform your PDFs with beautiful gilded edges. Perfect for print-on-demand books, journals, and professional documents.",
+    url: defaultUrl,
+    siteName: "Printed Edges",
+    type: "website",
+    images: [
+      {
+        url: "/opengraph-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Printed Edges - PDF Edge Processing"
+      }
+    ]
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Printed Edges - Add Gilded Edges to Your PDFs",
+    description: "Transform your PDFs with beautiful gilded edges. Perfect for print-on-demand books.",
+    images: ["/opengraph-image.png"]
+  }
 };
 
 const geistSans = Geist({

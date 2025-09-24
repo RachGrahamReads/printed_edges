@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Check, Loader2, Tag, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { SiteFooter } from "@/components/site-footer";
 
 const pricingPlans = [
   {
@@ -159,7 +161,7 @@ export default function PricingPage() {
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold mb-4">Choose Your Plan</h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Purchase edge design credits and create unlimited PDFs with your custom edge designs
+          Purchase edge design credits to create PDFs with your custom edge designs
         </p>
       </div>
 
@@ -285,7 +287,13 @@ export default function PricingPage() {
               </ul>
             </CardContent>
 
-            <CardFooter>
+            <CardFooter className="flex-col space-y-3">
+              <p className="text-xs text-center text-muted-foreground">
+                By purchasing, you agree to our{" "}
+                <Link href="/terms" className="underline hover:text-foreground">
+                  Terms of Service
+                </Link>
+              </p>
               <Button
                 className="w-full"
                 onClick={() => handlePurchase(plan.id)}
@@ -314,6 +322,8 @@ export default function PricingPage() {
           updated versions of your books!
         </p>
       </div>
+
+      <SiteFooter />
     </div>
   );
 }

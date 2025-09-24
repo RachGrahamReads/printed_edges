@@ -58,6 +58,8 @@ interface EdgeDesign {
   side_image_path?: string;
   top_image_path?: string;
   bottom_image_path?: string;
+  top_edge_color?: string;
+  bottom_edge_color?: string;
 }
 
 interface UserDetails {

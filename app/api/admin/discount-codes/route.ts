@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { requireAdmin } from '@/lib/admin';
 import { stripe } from '@/lib/stripe';
 
@@ -8,10 +9,10 @@ export async function GET(req: NextRequest) {
     // Check admin access
     await requireAdmin();
 
-    const supabase = await createClient();
+    const supabase = createServiceRoleClient();
 
-    // Get all discount codes
-    const { data: discountCodes, error } = await supabase
+    // Get all discount codes using service role client
+    const { data: discountCodes, error } = await (supabase as any)
       .from('discount_codes')
       .select('*')
       .order('created_at', { ascending: false });
@@ -79,10 +80,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
+    const supabase = createServiceRoleClient();
 
     // Check if code already exists
-    const { data: existingCode } = await supabase
+    const { data: existingCode } = await (supabase as any)
       .from('discount_codes')
       .select('id')
       .eq('code', code.toUpperCase())
@@ -131,17 +132,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create discount code in database using the function
-    const { data: discountCode, error: dbError } = await supabase.rpc('create_discount_code', {
-      p_code: code.toUpperCase(),
-      p_name: name,
-      p_description: description || '',
-      p_discount_type: discountType,
-      p_discount_value: discountValue,
-      p_usage_limit: usageLimit || null,
-      p_expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
-      p_admin_id: adminUser.id,
-    });
+    // Create discount code in database directly
+    const { data: discountCode, error: dbError } = await (supabase as any)
+      .from('discount_codes')
+      .insert({
+        code: code.toUpperCase(),
+        name: name,
+        description: description || '',
+        stripe_coupon_id: stripeCoupon.id,
+        discount_type: discountType,
+        discount_value: discountValue,
+        usage_limit: usageLimit || null,
+        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+        created_by: adminUser.id,
+      })
+      .select()
+      .single();
 
     if (dbError) {
       // If database creation fails, delete the Stripe coupon
@@ -155,22 +161,27 @@ export async function POST(req: NextRequest) {
       throw dbError;
     }
 
-    // Update the record with the Stripe coupon ID
-    const { error: updateError } = await supabase
-      .from('discount_codes')
-      .update({ stripe_coupon_id: stripeCoupon.id })
-      .eq('id', discountCode);
+    // Log the admin action
+    const { error: logError } = await (supabase as any)
+      .from('admin_actions')
+      .insert({
+        admin_id: adminUser.id,
+        action_type: 'create_discount_code',
+        target_type: 'discount_code',
+        target_id: discountCode.id,
+        details: {
+          code: code,
+          discount_type: discountType,
+          discount_value: discountValue,
+          usage_limit: usageLimit
+        }
+      });
 
-    if (updateError) {
-      console.error('Error updating discount code with Stripe ID:', updateError);
+    if (logError) {
+      console.error('Error logging admin action:', logError);
     }
 
-    // Fetch the created discount code
-    const { data: createdCode } = await supabase
-      .from('discount_codes')
-      .select('*')
-      .eq('id', discountCode)
-      .single();
+    const createdCode = discountCode;
 
     return NextResponse.json({
       success: true,

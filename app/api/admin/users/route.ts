@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { requireAdmin } from '@/lib/admin';
 
 export async function GET(req: NextRequest) {
   try {
     // Check admin access
     await requireAdmin();
+    console.log('Admin access confirmed for users API');
 
-    const supabase = await createClient();
+    // Use service role client for admin operations to bypass RLS
+    const supabase = createServiceRoleClient();
     const { searchParams } = new URL(req.url);
 
     const search = searchParams.get('search') || '';
