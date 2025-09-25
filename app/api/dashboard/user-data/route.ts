@@ -3,31 +3,13 @@ import { createClient } from '@/lib/supabase/server';
 
 export async function GET(req: NextRequest) {
   try {
-    console.log('Dashboard API: Starting request processing');
-
     // Use regular client for authentication
     const supabase = await createClient();
-    console.log('Dashboard API: Supabase client created');
 
     // Get authenticated user
-    console.log('Dashboard API: Getting user authentication');
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    console.log('Dashboard API: Auth result:', {
-      hasUser: !!user,
-      userId: user?.id,
-      authErrorCode: authError?.code,
-      authErrorMessage: authError?.message
-    });
 
     if (authError || !user) {
-      console.log('Dashboard API: Authentication failed', {
-        authError: {
-          code: authError?.code,
-          message: authError?.message,
-          status: authError?.status
-        },
-        hasUser: !!user
-      });
       return NextResponse.json(
         {
           error: 'Authentication required',
@@ -40,8 +22,6 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    console.log('Dashboard API: User authenticated:', user.id);
-
     // Get user profile data from public.users table using regular client
     // Since the user is authenticated, RLS should allow access to their own data
     const { data: userProfile, error: userProfileError } = await supabase
@@ -50,39 +30,17 @@ export async function GET(req: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    if (userProfileError) {
-      console.log('User profile not found in public.users, using auth data:', userProfileError);
-    }
-
-    // Get user credits with detailed error handling
-    console.log('Dashboard API: Fetching credits for user:', user.id);
+    // Get user credits
     const { data: creditsData, error: creditsError } = await supabase
       .from('user_credits')
       .select('total_credits, used_credits, created_at, updated_at')
       .eq('user_id', user.id)
       .single();
 
-    console.log('Dashboard API: Credits query result:', {
-      hasCreditsData: !!creditsData,
-      creditsData: creditsData,
-      creditsError: creditsError
-    });
-
     if (creditsError) {
-      console.error('Credits fetch error - DETAILED:', {
-        code: creditsError.code,
-        message: creditsError.message,
-        details: creditsError.details,
-        hint: creditsError.hint,
-        fullError: JSON.stringify(creditsError, null, 2)
-      });
-      console.error('User ID:', user.id);
-      console.error('Query attempted: SELECT total_credits, used_credits, created_at, updated_at FROM user_credits WHERE user_id =', user.id);
 
       // If no credits record exists, create one
       if (creditsError.code === 'PGRST116' || creditsError.message.includes('No rows') || creditsError.message.includes('not found')) {
-        console.log('Creating initial credits record for user:', user.id);
-
         const { data: newCreditsData, error: insertError } = await supabase
           .from('user_credits')
           .insert({
@@ -94,16 +52,7 @@ export async function GET(req: NextRequest) {
           .single();
 
         if (insertError) {
-          console.error('Error creating credits record - DETAILED:', {
-            code: insertError.code,
-            message: insertError.message,
-            details: insertError.details,
-            hint: insertError.hint,
-            fullError: JSON.stringify(insertError, null, 2)
-          });
-
           // If insert fails, return a default credits object instead of erroring
-          console.log('Using default credits fallback for user:', user.id);
           return NextResponse.json({
             credits: {
               total_credits: 0,
@@ -144,37 +93,25 @@ export async function GET(req: NextRequest) {
     }
 
     // Get edge designs count
-    const { data: designsData, error: designsError } = await supabase
+    const { data: designsData } = await supabase
       .from('edge_designs')
       .select('id')
       .eq('user_id', user.id)
       .eq('is_active', true);
 
-    if (designsError) {
-      console.error('Designs fetch error:', designsError);
-    }
-
     // Get processing jobs count
-    const { data: jobsData, error: jobsError } = await supabase
+    const { data: jobsData } = await supabase
       .from('processing_jobs')
       .select('id')
       .eq('user_id', user.id);
 
-    if (jobsError) {
-      console.error('Jobs fetch error:', jobsError);
-    }
-
     // Get recent purchases
-    const { data: purchasesData, error: purchasesError } = await supabase
+    const { data: purchasesData } = await supabase
       .from('purchases')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(5);
-
-    if (purchasesError) {
-      console.error('Purchases fetch error:', purchasesError);
-    }
 
     const responseData = {
       credits: creditsData,
@@ -193,15 +130,10 @@ export async function GET(req: NextRequest) {
       }
     };
 
-    console.log('Dashboard API: Final response credits:', responseData.credits);
     return NextResponse.json(responseData);
 
   } catch (error) {
-    console.error('Dashboard API error (detailed):', {
-      message: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-      error: error
-    });
+    console.error('Dashboard API error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
