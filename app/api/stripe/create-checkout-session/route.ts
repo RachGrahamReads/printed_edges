@@ -64,51 +64,44 @@ export async function POST(req: NextRequest) {
 
           // Check if promotion code is active
           if (!promoCode.active) {
-            return NextResponse.json(
-              { error: 'Discount code is no longer active' },
-              { status: 400 }
-            );
+            console.warn(`Inactive promotion code attempted: ${discountCode}`);
+            // Skip this promotion code, but continue looking for fallback coupon
+          } else if (!coupon.valid) {
+            console.warn(`Invalid coupon attempted: ${discountCode}`);
+            // Skip this promotion code, but continue looking for fallback coupon
+          } else {
+            // Promotion code is valid, apply it
+            discountCouponId = coupon.id;
+            discountCodeData = {
+              discount_type: coupon.percent_off ? 'percentage' : 'fixed_amount',
+              discount_value: coupon.percent_off || (coupon.amount_off ? coupon.amount_off / 100 : 0),
+              code: promoCode.code
+            };
           }
-
-          // Check if coupon is valid
-          if (!coupon.valid) {
-            return NextResponse.json(
-              { error: 'Discount code is no longer valid' },
-              { status: 400 }
-            );
-          }
-
-          discountCouponId = coupon.id;
-          discountCodeData = {
-            discount_type: coupon.percent_off ? 'percentage' : 'fixed_amount',
-            discount_value: coupon.percent_off || (coupon.amount_off ? coupon.amount_off / 100 : 0),
-            code: promoCode.code
-          };
-        } else {
+        } else if (!discountCouponId) {
           // If no promotion code found, try as a coupon ID (for backward compatibility)
-          const coupon = await stripe.coupons.retrieve(discountCode.toLowerCase());
+          try {
+            const coupon = await stripe.coupons.retrieve(discountCode.toLowerCase());
 
-          // Check if coupon is valid
-          if (!coupon.valid) {
-            return NextResponse.json(
-              { error: 'Discount code is no longer valid' },
-              { status: 400 }
-            );
+            // Check if coupon is valid
+            if (coupon.valid) {
+              discountCouponId = coupon.id;
+              discountCodeData = {
+                discount_type: coupon.percent_off ? 'percentage' : 'fixed_amount',
+                discount_value: coupon.percent_off || (coupon.amount_off ? coupon.amount_off / 100 : 0),
+                code: discountCode.toUpperCase()
+              };
+            } else {
+              console.warn(`Invalid fallback coupon attempted: ${discountCode}`);
+            }
+          } catch (couponError) {
+            console.warn(`Fallback coupon not found: ${discountCode}`);
           }
-
-          discountCouponId = coupon.id;
-          discountCodeData = {
-            discount_type: coupon.percent_off ? 'percentage' : 'fixed_amount',
-            discount_value: coupon.percent_off || (coupon.amount_off ? coupon.amount_off / 100 : 0),
-            code: discountCode.toUpperCase()
-          };
         }
       } catch (error: any) {
-        // If neither promotion code nor coupon exists, it's invalid
-        return NextResponse.json(
-          { error: 'Invalid discount code' },
-          { status: 400 }
-        );
+        // If neither promotion code nor coupon exists, ignore the discount and proceed with checkout
+        console.warn(`Invalid discount code attempted: ${discountCode}`, error);
+        // discountCouponId remains null, so no discount will be applied
       }
     }
 
