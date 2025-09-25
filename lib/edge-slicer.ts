@@ -576,56 +576,118 @@ export async function createAndStoreRawSlices(
 
   if (rawSlices.side) {
     storagePaths.side = { raw: [], masked: [] };
-    for (let i = 0; i < rawSlices.side.length; i++) {
+    console.log(`Uploading ${rawSlices.side.length} raw side slices in batches...`);
+
+    const uploadPromises = rawSlices.side.map(async (slice, i) => {
       const path = `${sessionId}/raw-slices/side_${i}.png`;
-      const bytes = base64ToUint8Array(rawSlices.side[i]);
+      const bytes = base64ToUint8Array(slice);
 
-      const { error } = await supabase.storage
-        .from('edge-images')
-        .upload(path, bytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+      let retryCount = 0;
+      const maxRetries = 3;
 
-      if (error) throw error;
-      storagePaths.side.raw.push(path);
-    }
+      while (retryCount < maxRetries) {
+        try {
+          const { error } = await supabase.storage
+            .from('edge-images')
+            .upload(path, bytes, {
+              contentType: 'image/png',
+              upsert: true
+            });
+
+          if (error) throw new Error(`Upload failed: ${error.message}`);
+          return { index: i, path };
+        } catch (uploadError) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw new Error(`Failed to upload side slice ${i} after ${maxRetries} attempts: ${uploadError.message}`);
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
+    });
+
+    const results = await Promise.all(uploadPromises);
+
+    // Sort results by index to maintain order
+    results.sort((a, b) => a.index - b.index);
+    storagePaths.side.raw = results.map(r => r.path);
+    console.log(`✓ Uploaded ${results.length} raw side slices`);
   }
 
   if (rawSlices.top) {
     storagePaths.top = { raw: [], masked: [] };
-    for (let i = 0; i < rawSlices.top.length; i++) {
+    console.log(`Uploading ${rawSlices.top.length} raw top slices in parallel...`);
+
+    const uploadPromises = rawSlices.top.map(async (slice, i) => {
       const path = `${sessionId}/raw-slices/top_${i}.png`;
-      const bytes = base64ToUint8Array(rawSlices.top[i]);
+      const bytes = base64ToUint8Array(slice);
 
-      const { error } = await supabase.storage
-        .from('edge-images')
-        .upload(path, bytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+      let retryCount = 0;
+      const maxRetries = 3;
 
-      if (error) throw error;
-      storagePaths.top.raw.push(path);
-    }
+      while (retryCount < maxRetries) {
+        try {
+          const { error } = await supabase.storage
+            .from('edge-images')
+            .upload(path, bytes, {
+              contentType: 'image/png',
+              upsert: true
+            });
+
+          if (error) throw new Error(`Upload failed: ${error.message}`);
+          return { index: i, path };
+        } catch (uploadError) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw new Error(`Failed to upload top slice ${i} after ${maxRetries} attempts: ${uploadError.message}`);
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
+    });
+
+    const results = await Promise.all(uploadPromises);
+    results.sort((a, b) => a.index - b.index);
+    storagePaths.top.raw = results.map(r => r.path);
+    console.log(`✓ Uploaded ${results.length} raw top slices`);
   }
 
   if (rawSlices.bottom) {
     storagePaths.bottom = { raw: [], masked: [] };
-    for (let i = 0; i < rawSlices.bottom.length; i++) {
+    console.log(`Uploading ${rawSlices.bottom.length} raw bottom slices in parallel...`);
+
+    const uploadPromises = rawSlices.bottom.map(async (slice, i) => {
       const path = `${sessionId}/raw-slices/bottom_${i}.png`;
-      const bytes = base64ToUint8Array(rawSlices.bottom[i]);
+      const bytes = base64ToUint8Array(slice);
 
-      const { error } = await supabase.storage
-        .from('edge-images')
-        .upload(path, bytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+      let retryCount = 0;
+      const maxRetries = 3;
 
-      if (error) throw error;
-      storagePaths.bottom.raw.push(path);
-    }
+      while (retryCount < maxRetries) {
+        try {
+          const { error } = await supabase.storage
+            .from('edge-images')
+            .upload(path, bytes, {
+              contentType: 'image/png',
+              upsert: true
+            });
+
+          if (error) throw new Error(`Upload failed: ${error.message}`);
+          return { index: i, path };
+        } catch (uploadError) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw new Error(`Failed to upload bottom slice ${i} after ${maxRetries} attempts: ${uploadError.message}`);
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
+    });
+
+    const results = await Promise.all(uploadPromises);
+    results.sort((a, b) => a.index - b.index);
+    storagePaths.bottom.raw = results.map(r => r.path);
+    console.log(`✓ Uploaded ${results.length} raw bottom slices`);
   }
 
   console.log('Raw slices uploaded to storage:', storagePaths);
