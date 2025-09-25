@@ -1,6 +1,9 @@
 -- Create admin_grant_credits function for admin panel credit management
 -- This function allows admins to grant credits to users
 
+-- Ensure uuid-ossp extension is available (though it should be by default in Supabase)
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 CREATE OR REPLACE FUNCTION public.admin_grant_credits(
     p_admin_id UUID,
     p_user_id UUID,

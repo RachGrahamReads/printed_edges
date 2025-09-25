@@ -55,11 +55,18 @@ export async function GET(req: NextRequest) {
     }
 
     // Get user credits with detailed error handling
+    console.log('Dashboard API: Fetching credits for user:', user.id);
     const { data: creditsData, error: creditsError } = await supabase
       .from('user_credits')
       .select('total_credits, used_credits, created_at, updated_at')
       .eq('user_id', user.id)
       .single();
+
+    console.log('Dashboard API: Credits query result:', {
+      hasCreditsData: !!creditsData,
+      creditsData: creditsData,
+      creditsError: creditsError
+    });
 
     if (creditsError) {
       console.error('Credits fetch error - DETAILED:', {
@@ -169,7 +176,7 @@ export async function GET(req: NextRequest) {
       console.error('Purchases fetch error:', purchasesError);
     }
 
-    return NextResponse.json({
+    const responseData = {
       credits: creditsData,
       user: {
         id: user.id,
@@ -184,7 +191,10 @@ export async function GET(req: NextRequest) {
         processingJobs: jobsData?.length || 0,
         recentPurchases: purchasesData || []
       }
-    });
+    };
+
+    console.log('Dashboard API: Final response credits:', responseData.credits);
+    return NextResponse.json(responseData);
 
   } catch (error) {
     console.error('Dashboard API error (detailed):', {
