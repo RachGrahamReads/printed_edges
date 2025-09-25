@@ -6,6 +6,7 @@ import { AuthButton } from "@/components/auth-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Check, FileImage, Zap, Shield } from "lucide-react";
+import { HelpButtonWrapper } from "@/components/help-button-wrapper";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -26,6 +27,7 @@ export default async function Home() {
               <Link href="/pricing">
                 <Button variant="ghost" size="sm">Pricing</Button>
               </Link>
+              <HelpButtonWrapper />
               {user ? (
                 <Link href="/dashboard">
                   <Button size="sm">Dashboard</Button>

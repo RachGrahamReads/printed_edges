@@ -21,6 +21,7 @@ import { SiteFooter } from "@/components/site-footer";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { processPDFWithChunking } from '@/lib/process-with-chunking';
+import { HelpButton } from "@/components/help-button";
 
 export default function CreatePage() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -1112,6 +1113,7 @@ export default function CreatePage() {
                 {credits.total_credits - credits.used_credits} credits
               </Badge>
             )}
+            <HelpButton />
             <Link href="/pricing">
               <Button variant="ghost" size="sm">Pricing</Button>
             </Link>

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, CreditCard, FileImage, History, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { HelpButton } from "@/components/help-button";
 
 interface UserCredits {
   total_credits: number;
@@ -371,10 +372,13 @@ export function DashboardContent({ user }: DashboardContentProps) {
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">Hi, {apiUserData?.first_name || user.user_metadata?.first_name || user.email?.split('@')[0]}!</p>
         </div>
-        <Button variant="outline" onClick={handleSignOut}>
-          <LogOut className="h-4 w-4 mr-2" />
-          Sign Out
-        </Button>
+        <div className="flex items-center gap-2">
+          <HelpButton />
+          <Button variant="outline" onClick={handleSignOut}>
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign Out
+          </Button>
+        </div>
       </div>
 
       {/* Credits Overview */}
@@ -638,11 +642,6 @@ export function DashboardContent({ user }: DashboardContentProps) {
                         )}
 
                         <div className="flex flex-wrap gap-1">
-                          {design.side_image_path && (
-                            <Badge variant="secondary" className="text-xs px-1 py-0">
-                              Side
-                            </Badge>
-                          )}
                           {design.top_image_path && (
                             <Badge variant="secondary" className="text-xs px-1 py-0">
                               Top
@@ -651,11 +650,6 @@ export function DashboardContent({ user }: DashboardContentProps) {
                           {design.bottom_image_path && (
                             <Badge variant="secondary" className="text-xs px-1 py-0">
                               Bottom
-                            </Badge>
-                          )}
-                          {design.edge_type && (
-                            <Badge variant="outline" className="text-xs px-1 py-0">
-                              {design.edge_type === 'all-edges' ? 'All Edges' : 'Side Only'}
                             </Badge>
                           )}
                         </div>

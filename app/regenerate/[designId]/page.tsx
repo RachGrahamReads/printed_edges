@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Upload, FileText, Clock, AlertCircle, CheckCircle } from "lucide-react";
 import Link from "next/link";
+import { HelpButton } from "@/components/help-button";
 
 interface EdgeDesign {
   id: string;
@@ -225,6 +226,7 @@ export default function RegeneratePage() {
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </Link>
+          <HelpButton />
         </nav>
 
         {/* Header */}
