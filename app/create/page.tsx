@@ -22,6 +22,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { processPDFWithChunking } from '@/lib/process-with-chunking';
 import { HelpButton } from "@/components/help-button";
+import { HowToGuide } from "@/components/how-to-guide";
 
 export default function CreatePage() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -2137,6 +2138,11 @@ export default function CreatePage() {
                   )}
             </CardContent>
           </Card>
+        </div>
+
+        {/* How-to Guide Section */}
+        <div className="mt-16">
+          <HowToGuide />
         </div>
 
       </div>

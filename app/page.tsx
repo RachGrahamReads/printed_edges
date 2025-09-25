@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Check, FileImage, Zap, Shield } from "lucide-react";
 import { HelpButtonWrapper } from "@/components/help-button-wrapper";
+import { HowToGuideWrapper } from "@/components/how-to-guide-wrapper";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -176,6 +177,11 @@ export default async function Home() {
               </ul>
             </CardContent>
           </Card>
+        </div>
+
+        {/* How-to Guide Section */}
+        <div className="mb-16">
+          <HowToGuideWrapper />
         </div>
 
         {/* How It Works */}
