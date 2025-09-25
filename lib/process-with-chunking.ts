@@ -278,40 +278,50 @@ export async function processPDFWithChunking(
 
     console.log('Merging processed chunks...');
 
-    // Merge all processed chunks with extended timeout for large PDFs
+    // Use progressive merge for large PDFs (>50 chunks)
     const outputPath = `${sessionId}/final.pdf`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for merge
+    let finalPdfPath: string;
 
-    const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-pdf-chunks`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-        'apikey': supabaseAnonKey
-      },
-      body: JSON.stringify({
-        sessionId,
-        processedChunkPaths,
-        totalChunks: chunks.length,
-        outputPath
-      }),
-      signal: controller.signal
-    });
+    if (chunks.length > 50) {
+      console.log(`Large PDF detected (${chunks.length} chunks). Using progressive merge strategy.`);
+      finalPdfPath = await progressiveMerge(sessionId, processedChunkPaths, outputPath);
+    } else {
+      console.log(`Small PDF (${chunks.length} chunks). Using single-stage merge.`);
 
-    clearTimeout(timeoutId);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for merge
 
-    if (!mergeResponse.ok) {
-      const errorText = await mergeResponse.text();
-      throw new Error(`Failed to merge PDF chunks: ${mergeResponse.status} - ${errorText}`);
+      const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-pdf-chunks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'apikey': supabaseAnonKey
+        },
+        body: JSON.stringify({
+          sessionId,
+          processedChunkPaths,
+          totalChunks: chunks.length,
+          outputPath
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!mergeResponse.ok) {
+        const errorText = await mergeResponse.text();
+        throw new Error(`Failed to merge PDF chunks: ${mergeResponse.status} - ${errorText}`);
+      }
+
+      const mergeData = await mergeResponse.json();
+      finalPdfPath = outputPath;
     }
-
-    const mergeData = await mergeResponse.json();
 
     // Download the final PDF
     const { data: finalPdf, error: downloadError } = await supabase.storage
       .from('processed-pdfs')
-      .download(outputPath);
+      .download(finalPdfPath);
 
     if (downloadError) throw downloadError;
 
@@ -343,4 +353,123 @@ function base64ToUint8Array(base64: string): Uint8Array {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
+}
+
+// Progressive merge function for large PDFs
+async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOutputPath: string): Promise<string> {
+  if (!supabase) {
+    throw new Error('Supabase client not initialized');
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+  console.log(`Starting progressive merge for ${chunkPaths.length} chunks`);
+
+  // Stage 1: Merge chunks into intermediate PDFs (10-15 chunks per intermediate)
+  const INTERMEDIATE_SIZE = 12;
+  const intermediateGroups = [];
+
+  for (let i = 0; i < chunkPaths.length; i += INTERMEDIATE_SIZE) {
+    intermediateGroups.push(chunkPaths.slice(i, i + INTERMEDIATE_SIZE));
+  }
+
+  console.log(`Stage 1: Creating ${intermediateGroups.length} intermediate PDFs`);
+
+  const intermediatePaths: string[] = [];
+
+  // Process intermediate groups in batches to avoid overwhelming the system
+  const BATCH_SIZE = 5;
+  for (let batchStart = 0; batchStart < intermediateGroups.length; batchStart += BATCH_SIZE) {
+    const batchEnd = Math.min(batchStart + BATCH_SIZE, intermediateGroups.length);
+    const batchPromises = [];
+
+    for (let groupIndex = batchStart; groupIndex < batchEnd; groupIndex++) {
+      const group = intermediateGroups[groupIndex];
+      const intermediatePath = `${sessionId}/intermediate/stage1_${groupIndex}.pdf`;
+
+      batchPromises.push(
+        mergeGroup(group, intermediatePath, sessionId, groupIndex + 1, intermediateGroups.length)
+      );
+    }
+
+    const batchResults = await Promise.all(batchPromises);
+    intermediatePaths.push(...batchResults);
+
+    console.log(`Stage 1 batch ${Math.floor(batchStart/BATCH_SIZE) + 1}/${Math.ceil(intermediateGroups.length/BATCH_SIZE)} completed`);
+  }
+
+  // Stage 2: If we have many intermediate PDFs, create another level
+  if (intermediatePaths.length > 15) {
+    console.log(`Stage 2: Merging ${intermediatePaths.length} intermediate PDFs into final groups`);
+
+    const stage2Groups = [];
+    const STAGE2_SIZE = 10;
+
+    for (let i = 0; i < intermediatePaths.length; i += STAGE2_SIZE) {
+      stage2Groups.push(intermediatePaths.slice(i, i + STAGE2_SIZE));
+    }
+
+    const stage2Paths: string[] = [];
+
+    for (let groupIndex = 0; groupIndex < stage2Groups.length; groupIndex++) {
+      const group = stage2Groups[groupIndex];
+      const stage2Path = `${sessionId}/intermediate/stage2_${groupIndex}.pdf`;
+
+      const result = await mergeGroup(group, stage2Path, sessionId, groupIndex + 1, stage2Groups.length);
+      stage2Paths.push(result);
+    }
+
+    // Final stage: Merge stage2 results
+    console.log(`Final stage: Merging ${stage2Paths.length} stage2 PDFs into final PDF`);
+    return await mergeGroup(stage2Paths, finalOutputPath, sessionId, 1, 1);
+  } else {
+    // Final stage: Merge intermediate PDFs directly
+    console.log(`Final stage: Merging ${intermediatePaths.length} intermediate PDFs into final PDF`);
+    return await mergeGroup(intermediatePaths, finalOutputPath, sessionId, 1, 1);
+  }
+}
+
+// Helper function to merge a group of PDFs
+async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: string, groupNum: number, totalGroups: number): Promise<string> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+  console.log(`Merging group ${groupNum}/${totalGroups} (${chunkPaths.length} files) → ${outputPath}`);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout per group
+
+  try {
+    const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-pdf-chunks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseAnonKey}`,
+        'apikey': supabaseAnonKey
+      },
+      body: JSON.stringify({
+        sessionId,
+        processedChunkPaths: chunkPaths,
+        totalChunks: chunkPaths.length,
+        outputPath
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!mergeResponse.ok) {
+      const errorText = await mergeResponse.text();
+      throw new Error(`Failed to merge group ${groupNum}: ${mergeResponse.status} - ${errorText}`);
+    }
+
+    await mergeResponse.json(); // Consume the response
+    console.log(`✓ Group ${groupNum}/${totalGroups} merged successfully`);
+    return outputPath;
+
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
 }
