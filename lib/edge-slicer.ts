@@ -648,110 +648,158 @@ export async function createAndStoreMaskedSlices(
     bottom: rawSlicesPaths.bottom ? { raw: [...rawSlicesPaths.bottom.raw], masked: [] } : undefined
   };
 
-  // Process side edges with triangle masks
+  // Process side edges with triangle masks (batched for better performance)
   if (rawSlicesPaths.side) {
-    for (let i = 0; i < rawSlicesPaths.side.raw.length; i++) {
-      const rawPath = rawSlicesPaths.side.raw[i];
+    const BATCH_SIZE = 10; // Process 10 slices at a time
+    const totalSlices = rawSlicesPaths.side.raw.length;
 
-      // Download raw slice from storage
-      const { data: rawSliceBlob, error: downloadError } = await supabase.storage
-        .from('edge-images')
-        .download(rawPath);
+    console.log(`Processing ${totalSlices} side slices in batches of ${BATCH_SIZE}`);
 
-      if (downloadError) throw downloadError;
+    for (let batchStart = 0; batchStart < totalSlices; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalSlices);
+      const batchPromises = [];
 
-      // Convert blob to base64
-      const rawSliceBase64 = await blobToBase64(rawSliceBlob);
+      console.log(`Processing side slice batch ${Math.floor(batchStart/BATCH_SIZE) + 1}/${Math.ceil(totalSlices/BATCH_SIZE)} (slices ${batchStart + 1}-${batchEnd})`);
 
-      // Apply triangle mask
-      const maskedBase64 = await applyTriangleMaskToSlice(rawSliceBase64, 'side');
+      for (let i = batchStart; i < batchEnd; i++) {
+        batchPromises.push(processSingleMaskedSlice(rawSlicesPaths.side!.raw[i], i, sessionId, 'side'));
+      }
 
-      // Upload masked slice
-      const maskedPath = `${sessionId}/masked-slices/side_${i}.png`;
-      const maskedBytes = base64ToUint8Array(maskedBase64);
+      const batchResults = await Promise.all(batchPromises);
 
-      const { error: uploadError } = await supabase.storage
-        .from('edge-images')
-        .upload(maskedPath, maskedBytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+      // Add results in order
+      for (const result of batchResults) {
+        maskedPaths.side!.masked.push(result);
+      }
 
-      if (uploadError) throw uploadError;
-      maskedPaths.side!.masked.push(maskedPath);
+      // Brief pause between batches to prevent overwhelming the system
+      if (batchEnd < totalSlices) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     }
   }
 
-  // Process top edges with triangle masks
+  // Process top edges with triangle masks (batched)
   if (rawSlicesPaths.top) {
-    for (let i = 0; i < rawSlicesPaths.top.raw.length; i++) {
-      const rawPath = rawSlicesPaths.top.raw[i];
+    const BATCH_SIZE = 10;
+    const totalSlices = rawSlicesPaths.top.raw.length;
 
-      // Download raw slice from storage
-      const { data: rawSliceBlob, error: downloadError } = await supabase.storage
-        .from('edge-images')
-        .download(rawPath);
+    console.log(`Processing ${totalSlices} top slices in batches of ${BATCH_SIZE}`);
 
-      if (downloadError) throw downloadError;
+    for (let batchStart = 0; batchStart < totalSlices; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalSlices);
+      const batchPromises = [];
 
-      // Convert blob to base64
-      const rawSliceBase64 = await blobToBase64(rawSliceBlob);
+      console.log(`Processing top slice batch ${Math.floor(batchStart/BATCH_SIZE) + 1}/${Math.ceil(totalSlices/BATCH_SIZE)} (slices ${batchStart + 1}-${batchEnd})`);
 
-      // Apply triangle mask
-      const maskedBase64 = await applyTriangleMaskToSlice(rawSliceBase64, 'top');
+      for (let i = batchStart; i < batchEnd; i++) {
+        batchPromises.push(processSingleMaskedSlice(rawSlicesPaths.top!.raw[i], i, sessionId, 'top'));
+      }
 
-      // Upload masked slice
-      const maskedPath = `${sessionId}/masked-slices/top_${i}.png`;
-      const maskedBytes = base64ToUint8Array(maskedBase64);
+      const batchResults = await Promise.all(batchPromises);
 
-      const { error: uploadError } = await supabase.storage
-        .from('edge-images')
-        .upload(maskedPath, maskedBytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+      for (const result of batchResults) {
+        maskedPaths.top!.masked.push(result);
+      }
 
-      if (uploadError) throw uploadError;
-      maskedPaths.top!.masked.push(maskedPath);
+      if (batchEnd < totalSlices) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     }
   }
 
-  // Process bottom edges with triangle masks
+  // Process bottom edges with triangle masks (batched)
   if (rawSlicesPaths.bottom) {
-    for (let i = 0; i < rawSlicesPaths.bottom.raw.length; i++) {
-      const rawPath = rawSlicesPaths.bottom.raw[i];
+    const BATCH_SIZE = 10;
+    const totalSlices = rawSlicesPaths.bottom.raw.length;
 
-      // Download raw slice from storage
-      const { data: rawSliceBlob, error: downloadError } = await supabase.storage
-        .from('edge-images')
-        .download(rawPath);
+    console.log(`Processing ${totalSlices} bottom slices in batches of ${BATCH_SIZE}`);
 
-      if (downloadError) throw downloadError;
+    for (let batchStart = 0; batchStart < totalSlices; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalSlices);
+      const batchPromises = [];
 
-      // Convert blob to base64
-      const rawSliceBase64 = await blobToBase64(rawSliceBlob);
+      console.log(`Processing bottom slice batch ${Math.floor(batchStart/BATCH_SIZE) + 1}/${Math.ceil(totalSlices/BATCH_SIZE)} (slices ${batchStart + 1}-${batchEnd})`);
 
-      // Apply triangle mask
-      const maskedBase64 = await applyTriangleMaskToSlice(rawSliceBase64, 'bottom');
+      for (let i = batchStart; i < batchEnd; i++) {
+        batchPromises.push(processSingleMaskedSlice(rawSlicesPaths.bottom!.raw[i], i, sessionId, 'bottom'));
+      }
 
-      // Upload masked slice
-      const maskedPath = `${sessionId}/masked-slices/bottom_${i}.png`;
-      const maskedBytes = base64ToUint8Array(maskedBase64);
+      const batchResults = await Promise.all(batchPromises);
 
-      const { error: uploadError } = await supabase.storage
-        .from('edge-images')
-        .upload(maskedPath, maskedBytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+      for (const result of batchResults) {
+        maskedPaths.bottom!.masked.push(result);
+      }
 
-      if (uploadError) throw uploadError;
-      maskedPaths.bottom!.masked.push(maskedPath);
+      if (batchEnd < totalSlices) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     }
   }
 
   console.log('Masked slices uploaded to storage:', maskedPaths);
   return maskedPaths;
+}
+
+// Helper function to process a single masked slice with error handling
+async function processSingleMaskedSlice(
+  rawPath: string,
+  index: number,
+  sessionId: string,
+  edgeType: 'side' | 'top' | 'bottom'
+): Promise<string> {
+  if (!supabase) {
+    throw new Error('Supabase client not initialized');
+  }
+
+  let retryCount = 0;
+  const maxRetries = 3;
+
+  while (retryCount < maxRetries) {
+    try {
+      // Download raw slice from storage
+      const { data: rawSliceBlob, error: downloadError } = await supabase.storage
+        .from('edge-images')
+        .download(rawPath);
+
+      if (downloadError) throw new Error(`Download failed: ${downloadError.message}`);
+
+      // Convert blob to base64
+      const rawSliceBase64 = await blobToBase64(rawSliceBlob);
+
+      // Apply triangle mask
+      const maskedBase64 = await applyTriangleMaskToSlice(rawSliceBase64, edgeType);
+
+      // Upload masked slice
+      const maskedPath = `${sessionId}/masked-slices/${edgeType}_${index}.png`;
+      const maskedBytes = base64ToUint8Array(maskedBase64);
+
+      const { error: uploadError } = await supabase.storage
+        .from('edge-images')
+        .upload(maskedPath, maskedBytes, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+      console.log(`✓ Processed ${edgeType} slice ${index + 1}`);
+      return maskedPath;
+
+    } catch (error) {
+      retryCount++;
+      console.warn(`Failed to process ${edgeType} slice ${index + 1} (attempt ${retryCount}/${maxRetries}):`, error.message);
+
+      if (retryCount >= maxRetries) {
+        throw new Error(`Failed to process ${edgeType} slice ${index + 1} after ${maxRetries} attempts: ${error.message}`);
+      }
+
+      // Wait before retry with exponential backoff
+      await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+    }
+  }
+
+  throw new Error(`Unexpected error processing ${edgeType} slice ${index + 1}`);
 }
 
 // Helper function to create raw slice without triangle masks

@@ -65,53 +65,107 @@ serve(async (req) => {
 
     const chunks: ChunkInfo[] = [];
 
-    // Create chunks
-    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-      const startPage = chunkIndex * CHUNK_SIZE;
-      const endPage = Math.min(startPage + CHUNK_SIZE - 1, requestData.totalPages - 1);
-      const pageCount = endPage - startPage + 1;
-
-      console.log(`Creating chunk ${chunkIndex + 1}/${totalChunks}: pages ${startPage + 1}-${endPage + 1} (${pageCount} pages)`);
-
-      // Create a new PDF for this chunk
-      const chunkPdf = await PDFDocument.create();
-
-      // Copy pages for this chunk
-      const pageIndices = Array.from({ length: pageCount }, (_, i) => startPage + i);
-      const copiedPages = await chunkPdf.copyPages(sourcePdf, pageIndices);
-
-      // Add all copied pages to the chunk PDF
-      copiedPages.forEach(page => chunkPdf.addPage(page));
-
-      // Save the chunk (optimized for performance)
-      const chunkBytes = await chunkPdf.save({
-        useObjectStreams: false,
-        addDefaultPage: false,
-        objectsPerTick: 25, // Reduced for less CPU per iteration
-        updateFieldAppearances: false, // Skip field appearance updates
+    // Process chunks in batches to avoid timeout
+    const BATCH_SIZE = 50; // Process 50 chunks at a time
+    const batches = [];
+    for (let i = 0; i < totalChunks; i += BATCH_SIZE) {
+      batches.push({
+        start: i,
+        end: Math.min(i + BATCH_SIZE, totalChunks)
       });
+    }
 
-      // Upload chunk to storage
-      const chunkPath = `${requestData.sessionId}/chunks/chunk_${chunkIndex}.pdf`;
-      const { error: uploadError } = await supabase.storage
-        .from("pdfs")
-        .upload(chunkPath, chunkBytes, {
-          contentType: "application/pdf",
-          upsert: true
-        });
+    console.log(`Processing ${totalChunks} chunks in ${batches.length} batches of up to ${BATCH_SIZE}`);
 
-      if (uploadError) throw new Error(`Failed to upload chunk ${chunkIndex}: ${uploadError.message}`);
+    // Process each batch
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      console.log(`Processing chunk batch ${batchIndex + 1}/${batches.length} (chunks ${batch.start + 1}-${batch.end})`);
 
-      const chunkInfo: ChunkInfo = {
-        chunkIndex,
-        chunkPath,
-        startPage,
-        endPage,
-        pageCount
-      };
+      // Create chunks in this batch
+      for (let chunkIndex = batch.start; chunkIndex < batch.end; chunkIndex++) {
+        const startPage = chunkIndex * CHUNK_SIZE;
+        const endPage = Math.min(startPage + CHUNK_SIZE - 1, requestData.totalPages - 1);
+        const pageCount = endPage - startPage + 1;
 
-      chunks.push(chunkInfo);
-      console.log(`Chunk ${chunkIndex} created: ${chunkPath}`);
+        console.log(`Creating chunk ${chunkIndex + 1}/${totalChunks}: pages ${startPage + 1}-${endPage + 1} (${pageCount} pages)`);
+
+        try {
+          // Create a new PDF for this chunk
+          const chunkPdf = await PDFDocument.create();
+
+          // Copy pages for this chunk
+          const pageIndices = Array.from({ length: pageCount }, (_, i) => startPage + i);
+          const copiedPages = await chunkPdf.copyPages(sourcePdf, pageIndices);
+
+          // Add all copied pages to the chunk PDF
+          copiedPages.forEach(page => chunkPdf.addPage(page));
+
+          // Save the chunk (optimized for performance)
+          const chunkBytes = await chunkPdf.save({
+            useObjectStreams: false,
+            addDefaultPage: false,
+            objectsPerTick: 25, // Reduced for less CPU per iteration
+            updateFieldAppearances: false, // Skip field appearance updates
+          });
+
+          console.log(`Chunk ${chunkIndex + 1} size: ${chunkBytes.length} bytes`);
+
+          // Upload chunk to storage with retry logic
+          const chunkPath = `${requestData.sessionId}/chunks/chunk_${chunkIndex}.pdf`;
+          let uploadSuccess = false;
+          let retryCount = 0;
+          const maxRetries = 3;
+
+          while (!uploadSuccess && retryCount < maxRetries) {
+            try {
+              const { error: uploadError } = await supabase.storage
+                .from("pdfs")
+                .upload(chunkPath, chunkBytes, {
+                  contentType: "application/pdf",
+                  upsert: true
+                });
+
+              if (uploadError) {
+                throw new Error(`Upload error: ${uploadError.message}`);
+              }
+
+              uploadSuccess = true;
+              console.log(`✓ Chunk ${chunkIndex + 1} uploaded: ${chunkPath}`);
+            } catch (uploadError) {
+              retryCount++;
+              console.warn(`Upload attempt ${retryCount} failed for chunk ${chunkIndex + 1}:`, uploadError.message);
+
+              if (retryCount < maxRetries) {
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+              } else {
+                throw new Error(`Failed to upload chunk ${chunkIndex} after ${maxRetries} attempts: ${uploadError.message}`);
+              }
+            }
+          }
+
+          const chunkInfo: ChunkInfo = {
+            chunkIndex,
+            chunkPath,
+            startPage,
+            endPage,
+            pageCount
+          };
+
+          chunks.push(chunkInfo);
+
+        } catch (chunkError) {
+          console.error(`Error creating chunk ${chunkIndex + 1}:`, chunkError);
+          throw new Error(`Failed to create chunk ${chunkIndex + 1}: ${chunkError.message}`);
+        }
+      }
+
+      // Brief pause between batches to allow memory cleanup and prevent rate limiting
+      if (batchIndex < batches.length - 1) {
+        console.log(`Batch ${batchIndex + 1} completed. Pausing before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
 
     console.log(`PDF successfully chunked into ${chunks.length} pieces`);
