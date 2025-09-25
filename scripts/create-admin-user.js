@@ -7,8 +7,8 @@ const supabase = createClient(
 );
 
 async function createAdminUser() {
-  const email = 'rachgrahamreads@gmail.com';
-  const password = 'testpassword123'; // You can change this
+  const email = process.argv[2] || 'rachgrahamreads@gmail.com';
+  const password = process.argv[3] || 'testing123';
   const name = 'Rachel Graham';
 
   console.log('Creating admin user:', email);

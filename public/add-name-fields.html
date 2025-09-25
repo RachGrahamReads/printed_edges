@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add First Name & Surname Fields to Users</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .sql-block { background: #1f2937; color: #f9fafb; padding: 20px; border-radius: 6px; position: relative; font-family: 'Monaco', 'Menlo', monospace; font-size: 14px; overflow-x: auto; margin: 15px 0; }
+        .copy-btn { position: absolute; top: 10px; right: 10px; background: #4f46e5; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+        .copy-btn:hover { background: #3730a3; }
+        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 15px 0; }
+        .success { background: #d1fae5; border-left: 4px solid #10b981; padding: 15px; margin: 15px 0; }
+        .info { background: #dbeafe; border-left: 4px solid #3b82f6; padding: 15px; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <h1>👤 Add First Name & Surname Fields to Users</h1>
+
+    <div class="info">
+        <strong>ℹ️ Purpose:</strong> Add <code>first_name</code> and <code>surname</code> fields to the users table and migrate existing <code>name</code> data.
+    </div>
+
+    <h3>Step 1: Add New Columns</h3>
+    <p>Add first_name and surname columns to the users table:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Add first_name and surname columns to users table
+ALTER TABLE public.users
+ADD COLUMN IF NOT EXISTS first_name TEXT,
+ADD COLUMN IF NOT EXISTS surname TEXT;</pre>
+    </div>
+
+    <h3>Step 2: Check Current Names</h3>
+    <p>See what name data we currently have:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Check current name data
+SELECT id, email, name, first_name, surname
+FROM public.users
+ORDER BY created_at DESC;</pre>
+    </div>
+
+    <h3>Step 3: Split Existing Names</h3>
+    <p>Migrate existing full names to first_name and surname:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Split existing names into first_name and surname
+UPDATE public.users
+SET
+    first_name = CASE
+        WHEN name IS NOT NULL AND name != '' THEN
+            TRIM(SPLIT_PART(name, ' ', 1))
+        ELSE NULL
+    END,
+    surname = CASE
+        WHEN name IS NOT NULL AND name != '' AND POSITION(' ' IN name) > 0 THEN
+            TRIM(SUBSTRING(name FROM POSITION(' ' IN name) + 1))
+        ELSE NULL
+    END
+WHERE (first_name IS NULL OR surname IS NULL)
+AND name IS NOT NULL
+AND name != '';</pre>
+    </div>
+
+    <h3>Step 4: Handle Edge Cases</h3>
+    <p>Handle names that might have multiple parts or need cleanup:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Handle special cases and cleanup
+UPDATE public.users
+SET
+    first_name = CASE
+        WHEN first_name = '' THEN NULL
+        ELSE first_name
+    END,
+    surname = CASE
+        WHEN surname = '' THEN NULL
+        WHEN surname IS NULL AND first_name IS NOT NULL THEN
+            -- If we only have one name part, leave surname NULL
+            NULL
+        ELSE surname
+    END;</pre>
+    </div>
+
+    <h3>Step 5: Update Auth Metadata Migration</h3>
+    <p>Update the user copying function to use the new fields from auth metadata:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Updated function to copy users with proper name fields
+CREATE OR REPLACE FUNCTION copy_auth_users_to_public()
+RETURNS INTEGER AS $$
+DECLARE
+    inserted_count INTEGER;
+BEGIN
+    INSERT INTO public.users (id, email, first_name, surname, name, created_at, last_login)
+    SELECT
+        u.id,
+        u.email,
+        COALESCE(
+            u.raw_user_meta_data->>'first_name',
+            u.raw_user_meta_data->>'firstName',
+            CASE
+                WHEN u.raw_user_meta_data->>'full_name' IS NOT NULL THEN
+                    TRIM(SPLIT_PART(u.raw_user_meta_data->>'full_name', ' ', 1))
+                WHEN u.raw_user_meta_data->>'name' IS NOT NULL THEN
+                    TRIM(SPLIT_PART(u.raw_user_meta_data->>'name', ' ', 1))
+                ELSE NULL
+            END
+        ) as first_name,
+        COALESCE(
+            u.raw_user_meta_data->>'surname',
+            u.raw_user_meta_data->>'lastName',
+            u.raw_user_meta_data->>'last_name',
+            CASE
+                WHEN u.raw_user_meta_data->>'full_name' IS NOT NULL AND POSITION(' ' IN u.raw_user_meta_data->>'full_name') > 0 THEN
+                    TRIM(SUBSTRING(u.raw_user_meta_data->>'full_name' FROM POSITION(' ' IN u.raw_user_meta_data->>'full_name') + 1))
+                WHEN u.raw_user_meta_data->>'name' IS NOT NULL AND POSITION(' ' IN u.raw_user_meta_data->>'name') > 0 THEN
+                    TRIM(SUBSTRING(u.raw_user_meta_data->>'name' FROM POSITION(' ' IN u.raw_user_meta_data->>'name') + 1))
+                ELSE NULL
+            END
+        ) as surname,
+        COALESCE(
+            u.raw_user_meta_data->>'full_name',
+            u.raw_user_meta_data->>'name',
+            CONCAT_WS(' ',
+                u.raw_user_meta_data->>'first_name',
+                u.raw_user_meta_data->>'surname'
+            ),
+            split_part(u.email, '@', 1)
+        ) as name,
+        u.created_at,
+        u.last_sign_in_at
+    FROM auth.users u
+    WHERE u.id NOT IN (SELECT id FROM public.users)
+    AND u.email_confirmed_at IS NOT NULL;
+
+    GET DIAGNOSTICS inserted_count = ROW_COUNT;
+    RETURN inserted_count;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Run the function to copy any remaining users
+SELECT copy_auth_users_to_public() as users_copied;</pre>
+    </div>
+
+    <h3>Step 6: Verify the Results</h3>
+    <p>Check that names are properly separated:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Verify name separation
+SELECT
+    id,
+    email,
+    name as original_name,
+    first_name,
+    surname,
+    CONCAT_WS(' ', first_name, surname) as reconstructed_name
+FROM public.users
+WHERE first_name IS NOT NULL OR surname IS NOT NULL
+ORDER BY created_at DESC;</pre>
+    </div>
+
+    <h3>Step 7: Update User Profile Creation Trigger</h3>
+    <p>Update the trigger to use the new name fields:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Update the handle_new_user function to extract name fields
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Insert user with proper name fields
+    INSERT INTO public.users (
+        id,
+        email,
+        first_name,
+        surname,
+        name,
+        created_at
+    )
+    VALUES (
+        NEW.id,
+        NEW.email,
+        COALESCE(
+            NEW.raw_user_meta_data->>'first_name',
+            NEW.raw_user_meta_data->>'firstName'
+        ),
+        COALESCE(
+            NEW.raw_user_meta_data->>'surname',
+            NEW.raw_user_meta_data->>'lastName',
+            NEW.raw_user_meta_data->>'last_name'
+        ),
+        COALESCE(
+            NEW.raw_user_meta_data->>'full_name',
+            NEW.raw_user_meta_data->>'name',
+            CONCAT_WS(' ',
+                NEW.raw_user_meta_data->>'first_name',
+                NEW.raw_user_meta_data->>'surname'
+            )
+        ),
+        NEW.created_at
+    );
+
+    -- Create initial credits record
+    INSERT INTO public.user_credits (user_id, total_credits, used_credits)
+    VALUES (NEW.id, 0, 0);
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;</pre>
+    </div>
+
+    <div class="warning">
+        <strong>⚠️ Note:</strong> After running these commands, new users will have properly separated first_name and surname fields, and existing users will have their names split from the current name field.
+    </div>
+
+    <div class="success">
+        <strong>✅ Complete!</strong> Your users table now has separate first_name and surname fields!
+    </div>
+
+    <p><a href="/supabase-migrations.html">← Back to migration guide</a></p>
+
+    <script>
+        function copyToClipboard(element) {
+            const text = element.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = element.previousElementSibling;
+                btn.textContent = 'Copied!';
+                btn.style.background = '#10b981';
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                    btn.style.background = '#4f46e5';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

@@ -15,6 +15,15 @@ interface UserCredits {
   used_credits: number;
 }
 
+interface ApiUserData {
+  id: string;
+  email: string;
+  first_name?: string;
+  surname?: string;
+  name?: string;
+  created_at: string;
+}
+
 interface EdgeDesign {
   id: string;
   name: string;
@@ -49,6 +58,7 @@ interface DashboardContentProps {
 
 export function DashboardContent({ user }: DashboardContentProps) {
   const [credits, setCredits] = useState<UserCredits | null>(null);
+  const [apiUserData, setApiUserData] = useState<ApiUserData | null>(null);
   const [edgeDesigns, setEdgeDesigns] = useState<EdgeDesign[]>([]);
   const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,8 +226,12 @@ export function DashboardContent({ user }: DashboardContentProps) {
       if (data.credits) {
         setCredits(data.credits);
         console.log('Credits set:', data.credits);
-      } else {
-        console.warn('No credits data in response');
+      }
+
+      // Set user data from API
+      if (data.user) {
+        setApiUserData(data.user);
+        console.log('User data set:', data.user);
       }
 
       // Set processing jobs data
@@ -355,7 +369,7 @@ export function DashboardContent({ user }: DashboardContentProps) {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">Hi, {user.user_metadata?.first_name || user.email?.split('@')[0]}!</p>
+          <p className="text-muted-foreground">Hi, {apiUserData?.first_name || user.user_metadata?.first_name || user.email?.split('@')[0]}!</p>
         </div>
         <Button variant="outline" onClick={handleSignOut}>
           <LogOut className="h-4 w-4 mr-2" />

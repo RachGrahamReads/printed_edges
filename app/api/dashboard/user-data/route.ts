@@ -62,6 +62,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Get user profile data from public.users table
+    const { data: userProfile, error: userProfileError } = await serviceSupabase
+      .from('users')
+      .select('first_name, surname, name, email')
+      .eq('id', user.id)
+      .single();
+
+    if (userProfileError) {
+      console.log('User profile not found in public.users, using auth data');
+    }
+
     // Get user credits with detailed error handling
     const { data: creditsData, error: creditsError } = await serviceSupabase
       .from('user_credits')
@@ -114,7 +125,10 @@ export async function GET(req: NextRequest) {
             },
             user: {
               id: user.id,
-              email: user.email,
+              email: userProfile?.email || user.email,
+              first_name: userProfile?.first_name || user.user_metadata?.first_name,
+              surname: userProfile?.surname || user.user_metadata?.surname,
+              name: userProfile?.name || user.user_metadata?.full_name,
               created_at: user.created_at
             },
             stats: {
@@ -178,7 +192,10 @@ export async function GET(req: NextRequest) {
       credits: creditsData,
       user: {
         id: user.id,
-        email: user.email,
+        email: userProfile?.email || user.email,
+        first_name: userProfile?.first_name || user.user_metadata?.first_name,
+        surname: userProfile?.surname || user.user_metadata?.surname,
+        name: userProfile?.name || user.user_metadata?.full_name,
         created_at: user.created_at
       },
       stats: {

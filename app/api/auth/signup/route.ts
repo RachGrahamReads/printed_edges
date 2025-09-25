@@ -38,8 +38,15 @@ export async function POST(req: NextRequest) {
     // Prepare user metadata
     const userMetadata: Record<string, any> = {};
 
-    if (firstName) userMetadata.firstName = firstName.trim();
-    if (lastName) userMetadata.lastName = lastName.trim();
+    if (firstName) {
+      userMetadata.firstName = firstName.trim();
+      userMetadata.first_name = firstName.trim(); // Add underscore version
+    }
+    if (lastName) {
+      userMetadata.lastName = lastName.trim();
+      userMetadata.surname = lastName.trim(); // Add surname field
+      userMetadata.last_name = lastName.trim(); // Add underscore version
+    }
     if (fullName) userMetadata.fullName = fullName.trim();
 
     // Also add combined name variations for compatibility

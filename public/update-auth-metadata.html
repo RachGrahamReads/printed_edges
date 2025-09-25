@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Update Auth User Metadata</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .sql-block { background: #1f2937; color: #f9fafb; padding: 20px; border-radius: 6px; position: relative; font-family: 'Monaco', 'Menlo', monospace; font-size: 14px; overflow-x: auto; margin: 15px 0; }
+        .copy-btn { position: absolute; top: 10px; right: 10px; background: #4f46e5; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+        .copy-btn:hover { background: #3730a3; }
+        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 15px 0; }
+        .success { background: #d1fae5; border-left: 4px solid #10b981; padding: 15px; margin: 15px 0; }
+        .info { background: #dbeafe; border-left: 4px solid #3b82f6; padding: 15px; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <h1>🔄 Update Auth User Metadata Fields</h1>
+
+    <div class="info">
+        <strong>ℹ️ Purpose:</strong> Now that your signup API includes <code>first_name</code> and <code>surname</code> in the auth user metadata, we need to update the database trigger to properly extract these fields when creating public user records.
+    </div>
+
+    <h3>Step 1: Check Current Auth User Metadata</h3>
+    <p>Let's see what metadata fields are now available in your auth users:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Check current auth user metadata structure
+SELECT
+    id,
+    email,
+    raw_user_meta_data,
+    created_at
+FROM auth.users
+ORDER BY created_at DESC
+LIMIT 5;</pre>
+    </div>
+
+    <h3>Step 2: Update the User Profile Creation Trigger</h3>
+    <p>Update the trigger function to properly extract the new metadata fields:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Updated trigger function to handle improved metadata
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Insert user with proper name fields extracted from metadata
+    INSERT INTO public.users (
+        id,
+        email,
+        first_name,
+        surname,
+        name,
+        created_at
+    )
+    VALUES (
+        NEW.id,
+        NEW.email,
+        -- Extract first_name with multiple fallbacks
+        COALESCE(
+            NEW.raw_user_meta_data->>'first_name',
+            NEW.raw_user_meta_data->>'firstName',
+            CASE
+                WHEN NEW.raw_user_meta_data->>'full_name' IS NOT NULL THEN
+                    TRIM(SPLIT_PART(NEW.raw_user_meta_data->>'full_name', ' ', 1))
+                WHEN NEW.raw_user_meta_data->>'name' IS NOT NULL THEN
+                    TRIM(SPLIT_PART(NEW.raw_user_meta_data->>'name', ' ', 1))
+                ELSE NULL
+            END
+        ),
+        -- Extract surname with multiple fallbacks
+        COALESCE(
+            NEW.raw_user_meta_data->>'surname',
+            NEW.raw_user_meta_data->>'lastName',
+            NEW.raw_user_meta_data->>'last_name',
+            CASE
+                WHEN NEW.raw_user_meta_data->>'full_name' IS NOT NULL AND POSITION(' ' IN NEW.raw_user_meta_data->>'full_name') > 0 THEN
+                    TRIM(SUBSTRING(NEW.raw_user_meta_data->>'full_name' FROM POSITION(' ' IN NEW.raw_user_meta_data->>'full_name') + 1))
+                WHEN NEW.raw_user_meta_data->>'name' IS NOT NULL AND POSITION(' ' IN NEW.raw_user_meta_data->>'name') > 0 THEN
+                    TRIM(SUBSTRING(NEW.raw_user_meta_data->>'name' FROM POSITION(' ' IN NEW.raw_user_meta_data->>'name') + 1))
+                ELSE NULL
+            END
+        ),
+        -- Extract full name with fallbacks
+        COALESCE(
+            NEW.raw_user_meta_data->>'full_name',
+            NEW.raw_user_meta_data->>'name',
+            CONCAT_WS(' ',
+                COALESCE(
+                    NEW.raw_user_meta_data->>'first_name',
+                    NEW.raw_user_meta_data->>'firstName'
+                ),
+                COALESCE(
+                    NEW.raw_user_meta_data->>'surname',
+                    NEW.raw_user_meta_data->>'lastName',
+                    NEW.raw_user_meta_data->>'last_name'
+                )
+            ),
+            split_part(NEW.email, '@', 1)
+        ),
+        NEW.created_at
+    );
+
+    -- Create initial credits record
+    INSERT INTO public.user_credits (user_id, total_credits, used_credits)
+    VALUES (NEW.id, 0, 0)
+    ON CONFLICT (user_id) DO NOTHING;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;</pre>
+    </div>
+
+    <h3>Step 3: Update Existing Users (Optional)</h3>
+    <p>If you want to update existing users with the new metadata structure, run this:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Update existing public.users from auth.users metadata
+UPDATE public.users
+SET
+    first_name = COALESCE(
+        public.users.first_name, -- Keep existing if already set
+        auth_users.raw_user_meta_data->>'first_name',
+        auth_users.raw_user_meta_data->>'firstName',
+        CASE
+            WHEN auth_users.raw_user_meta_data->>'full_name' IS NOT NULL THEN
+                TRIM(SPLIT_PART(auth_users.raw_user_meta_data->>'full_name', ' ', 1))
+            WHEN auth_users.raw_user_meta_data->>'name' IS NOT NULL THEN
+                TRIM(SPLIT_PART(auth_users.raw_user_meta_data->>'name', ' ', 1))
+            ELSE NULL
+        END
+    ),
+    surname = COALESCE(
+        public.users.surname, -- Keep existing if already set
+        auth_users.raw_user_meta_data->>'surname',
+        auth_users.raw_user_meta_data->>'lastName',
+        auth_users.raw_user_meta_data->>'last_name',
+        CASE
+            WHEN auth_users.raw_user_meta_data->>'full_name' IS NOT NULL AND POSITION(' ' IN auth_users.raw_user_meta_data->>'full_name') > 0 THEN
+                TRIM(SUBSTRING(auth_users.raw_user_meta_data->>'full_name' FROM POSITION(' ' IN auth_users.raw_user_meta_data->>'full_name') + 1))
+            WHEN auth_users.raw_user_meta_data->>'name' IS NOT NULL AND POSITION(' ' IN auth_users.raw_user_meta_data->>'name') > 0 THEN
+                TRIM(SUBSTRING(auth_users.raw_user_meta_data->>'name' FROM POSITION(' ' IN auth_users.raw_user_meta_data->>'name') + 1))
+            ELSE NULL
+        END
+    )
+FROM auth.users auth_users
+WHERE public.users.id = auth_users.id
+AND (public.users.first_name IS NULL OR public.users.surname IS NULL);</pre>
+    </div>
+
+    <h3>Step 4: Verify the Updates</h3>
+    <p>Check that the trigger and updates worked correctly:</p>
+    <div class="sql-block">
+        <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+        <pre>-- Verify users have proper name fields
+SELECT
+    u.id,
+    u.email,
+    u.first_name,
+    u.surname,
+    u.name,
+    au.raw_user_meta_data->>'first_name' as auth_first_name,
+    au.raw_user_meta_data->>'surname' as auth_surname,
+    au.raw_user_meta_data->>'full_name' as auth_full_name
+FROM public.users u
+LEFT JOIN auth.users au ON u.id = au.id
+ORDER BY u.created_at DESC;</pre>
+    </div>
+
+    <div class="success">
+        <strong>✅ Complete!</strong> Your auth users now have <code>first_name</code> and <code>surname</code> fields in their metadata, and the database trigger will properly extract them into the public users table!
+    </div>
+
+    <div class="warning">
+        <strong>⚠️ For New Signups:</strong> New users will automatically get the proper metadata fields thanks to the updated signup API. The dashboard greeting should now show their first name correctly!
+    </div>
+
+    <p><a href="/supabase-migrations.html">← Back to migration guide</a></p>
+
+    <script>
+        function copyToClipboard(element) {
+            const text = element.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = element.previousElementSibling;
+                btn.textContent = 'Copied!';
+                btn.style.background = '#10b981';
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                    btn.style.background = '#4f46e5';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

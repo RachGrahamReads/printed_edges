@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Migrations - SQL Commands</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .migration-step {
+            background: white;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .migration-step h3 {
+            color: #2563eb;
+            margin-top: 0;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+        .sql-block {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 15px 0;
+            position: relative;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 14px;
+            line-height: 1.4;
+            overflow-x: auto;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #4f46e5;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background-color 0.2s;
+        }
+        .copy-btn:hover {
+            background: #3730a3;
+        }
+        .copy-btn:active {
+            background: #1e1b4b;
+        }
+        .warning {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d1fae5;
+            border-left: 4px solid #10b981;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .toc {
+            background: #f3f4f6;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .toc ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .toc a {
+            color: #2563eb;
+            text-decoration: none;
+        }
+        .toc a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🗄️ Supabase Database Migrations</h1>
+        <p>Run these SQL commands in your Supabase SQL Editor in the exact order shown below.</p>
+    </div>
+
+    <div class="warning">
+        <strong>⚠️ Important:</strong> Run these commands in order. Each step builds on the previous one.
+    </div>
+
+    <div class="toc">
+        <h3>📋 Table of Contents</h3>
+        <ul>
+            <li><a href="#step1">Step 1: Base Schema & Extensions</a></li>
+            <li><a href="#step2">Step 2: Payment System Tables</a></li>
+            <li><a href="#step3">Step 3: RLS Policies</a></li>
+            <li><a href="#step4">Step 4: Core Functions & Triggers</a></li>
+            <li><a href="#step5">Step 5: Admin System</a></li>
+            <li><a href="#step6">Step 6: Storage Bucket Policies</a></li>
+            <li><a href="#step7">Step 7: Latest Fixes & Updates</a></li>
+        </ul>
+    </div>
+
+    <div class="migration-step" id="step1">
+        <h3>Step 1: Base Schema & Extensions</h3>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Enable required extensions
+CREATE EXTENSION IF NOT EXISTS "pg_graphql" WITH SCHEMA "graphql";
+CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
+CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
+
+-- Create base tables
+CREATE TABLE IF NOT EXISTS "public"."books" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "pdf_url" "text",
+    "edge_image_url" "text",
+    "position" "text",
+    "mode" "text",
+    "status" "text",
+    "output_pdf_url" "text",
+    "created_at" timestamp without time zone DEFAULT "now"()
+);
+
+CREATE TABLE IF NOT EXISTS "public"."users" (
+    "id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
+    "email" "text",
+    "name" "text",
+    "subscription_status" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "last_login" timestamp without time zone
+);
+
+-- Add constraints
+ALTER TABLE ONLY "public"."books" ADD CONSTRAINT "books_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."users" ADD CONSTRAINT "users_pkey" PRIMARY KEY ("id");
+
+-- Enable RLS
+ALTER TABLE "public"."books" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."users" ENABLE ROW LEVEL SECURITY;</pre>
+        </div>
+    </div>
+
+    <div class="migration-step" id="step2">
+        <h3>Step 2: Payment System Tables</h3>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Create enums
+CREATE TYPE payment_status AS ENUM ('pending', 'completed', 'failed', 'refunded');
+CREATE TYPE purchase_type AS ENUM ('single_image', 'three_images');
+
+-- Add Stripe customer ID to users
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT UNIQUE;
+
+-- Create user credits table
+CREATE TABLE IF NOT EXISTS public.user_credits (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+    total_credits INTEGER DEFAULT 0 NOT NULL,
+    used_credits INTEGER DEFAULT 0 NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    CONSTRAINT credits_check CHECK (used_credits <= total_credits),
+    CONSTRAINT credits_non_negative CHECK (total_credits >= 0 AND used_credits >= 0)
+);
+
+-- Create edge designs table
+CREATE TABLE IF NOT EXISTS public.edge_designs (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+    name TEXT NOT NULL,
+    side_image_path TEXT,
+    top_image_path TEXT,
+    bottom_image_path TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    is_active BOOLEAN DEFAULT true NOT NULL
+);
+
+-- Create purchases table
+CREATE TABLE IF NOT EXISTS public.purchases (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+    stripe_payment_intent_id TEXT UNIQUE,
+    stripe_session_id TEXT UNIQUE,
+    amount INTEGER NOT NULL,
+    currency TEXT DEFAULT 'usd' NOT NULL,
+    purchase_type purchase_type NOT NULL,
+    credits_granted INTEGER NOT NULL,
+    status payment_status DEFAULT 'pending' NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    completed_at TIMESTAMPTZ,
+    metadata JSONB DEFAULT '{}' NOT NULL
+);
+
+-- Create processing jobs table
+CREATE TABLE IF NOT EXISTS public.processing_jobs (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+    edge_design_id UUID REFERENCES public.edge_designs(id) ON DELETE CASCADE NOT NULL,
+    input_pdf_path TEXT NOT NULL,
+    output_pdf_path TEXT,
+    page_count INTEGER,
+    page_type TEXT,
+    bleed_type TEXT,
+    edge_type TEXT,
+    status TEXT DEFAULT 'pending' NOT NULL,
+    error_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    completed_at TIMESTAMPTZ,
+    metadata JSONB DEFAULT '{}' NOT NULL
+);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_user_credits_user_id ON public.user_credits(user_id);
+CREATE INDEX IF NOT EXISTS idx_edge_designs_user_id ON public.edge_designs(user_id);
+CREATE INDEX IF NOT EXISTS idx_purchases_user_id ON public.purchases(user_id);
+CREATE INDEX IF NOT EXISTS idx_purchases_status ON public.purchases(status);
+CREATE INDEX IF NOT EXISTS idx_processing_jobs_user_id ON public.processing_jobs(user_id);
+CREATE INDEX IF NOT EXISTS idx_processing_jobs_edge_design_id ON public.processing_jobs(edge_design_id);
+CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON public.processing_jobs(status);
+
+-- Enable RLS
+ALTER TABLE public.user_credits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.edge_designs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purchases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.processing_jobs ENABLE ROW LEVEL SECURITY;</pre>
+        </div>
+    </div>
+
+    <div class="migration-step" id="step3">
+        <h3>Step 3: RLS Policies</h3>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- User credits policies
+CREATE POLICY "Users can view their own credits" ON public.user_credits FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Only service role can insert/update credits" ON public.user_credits FOR ALL USING (auth.role() = 'service_role');
+
+-- Edge designs policies
+CREATE POLICY "Users can view their own edge designs" ON public.edge_designs FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert their own edge designs" ON public.edge_designs FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update their own edge designs" ON public.edge_designs FOR UPDATE USING (auth.uid() = user_id);
+
+-- Purchases policies
+CREATE POLICY "Users can view their own purchases" ON public.purchases FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Only service role can manage purchases" ON public.purchases FOR ALL USING (auth.role() = 'service_role');
+
+-- Processing jobs policies
+CREATE POLICY "Users can view their own processing jobs" ON public.processing_jobs FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can create their own processing jobs" ON public.processing_jobs FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update their own processing jobs" ON public.processing_jobs FOR UPDATE USING (auth.uid() = user_id);</pre>
+        </div>
+    </div>
+
+    <div class="migration-step" id="step4">
+        <h3>Step 4: Core Functions & Triggers</h3>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Function to handle new user signup
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.user_credits (user_id, total_credits, used_credits)
+    VALUES (NEW.id, 0, 0);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger for new users
+CREATE TRIGGER on_user_created
+    AFTER INSERT ON public.users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_new_user();
+
+-- Grant credits function
+CREATE OR REPLACE FUNCTION public.grant_credits(
+    p_user_id UUID,
+    p_credits INTEGER,
+    p_purchase_id UUID
+)
+RETURNS VOID AS $$
+BEGIN
+    INSERT INTO public.user_credits (user_id, total_credits, used_credits)
+    VALUES (p_user_id, p_credits, 0)
+    ON CONFLICT (user_id) DO UPDATE
+    SET total_credits = public.user_credits.total_credits + p_credits,
+        updated_at = NOW();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Consume credit function
+CREATE OR REPLACE FUNCTION public.consume_credit(p_user_id UUID)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_available_credits INTEGER;
+BEGIN
+    SELECT (total_credits - used_credits) INTO v_available_credits
+    FROM public.user_credits
+    WHERE user_id = p_user_id;
+
+    IF v_available_credits IS NULL OR v_available_credits < 1 THEN
+        RETURN FALSE;
+    END IF;
+
+    UPDATE public.user_credits
+    SET used_credits = used_credits + 1,
+        updated_at = NOW()
+    WHERE user_id = p_user_id;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;</pre>
+        </div>
+    </div>
+
+    <div class="migration-step" id="step5">
+        <h3>Step 5: Admin System</h3>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Add admin field to users
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_is_admin ON public.users(is_admin);
+
+-- Admin policies
+CREATE POLICY "Admins can view all user credits" ON public.user_credits FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.is_admin = true));
+
+CREATE POLICY "Admins can manage all user credits" ON public.user_credits FOR ALL
+    USING (EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.is_admin = true));
+
+CREATE POLICY "Admins can view all purchases" ON public.purchases FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.is_admin = true));
+
+CREATE POLICY "Admins can view all edge designs" ON public.edge_designs FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.is_admin = true));
+
+CREATE POLICY "Admins can view all processing jobs" ON public.processing_jobs FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.is_admin = true));
+
+CREATE POLICY "Admins can view all users" ON public.users FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.is_admin = true));
+
+CREATE POLICY "Admins can update user admin status" ON public.users FOR UPDATE
+    USING (EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.is_admin = true));</pre>
+        </div>
+    </div>
+
+    <div class="migration-step" id="step6">
+        <h3>Step 6: Storage Bucket Policies</h3>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Make storage buckets public
+UPDATE storage.buckets
+SET public = true
+WHERE id IN ('pdfs', 'edge-images', 'processed-pdfs');
+
+-- Create policy to allow public read access to objects in all buckets
+CREATE POLICY "Public Read Access"
+ON storage.objects FOR SELECT
+TO public
+USING (bucket_id IN ('pdfs', 'edge-images', 'processed-pdfs'));
+
+-- Create policy to allow public write access to objects in all buckets
+CREATE POLICY "Public Write Access"
+ON storage.objects FOR INSERT
+TO public
+WITH CHECK (bucket_id IN ('pdfs', 'edge-images', 'processed-pdfs'));</pre>
+        </div>
+    </div>
+
+    <div class="migration-step" id="step7">
+        <h3>Step 7: Latest Fixes & Updates</h3>
+        <p>Run each of these SQL blocks separately:</p>
+
+        <h4>7a. Fix Grant Credits Function</h4>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Fix grant credits function with proper conflict handling
+CREATE OR REPLACE FUNCTION public.grant_credits(
+    p_user_id UUID,
+    p_credits INTEGER,
+    p_purchase_id UUID DEFAULT NULL
+)
+RETURNS VOID AS $$
+BEGIN
+    -- First ensure user_credits record exists
+    INSERT INTO public.user_credits (user_id, total_credits, used_credits)
+    VALUES (p_user_id, 0, 0)
+    ON CONFLICT (user_id) DO NOTHING;
+
+    -- Then update the credits
+    UPDATE public.user_credits
+    SET total_credits = total_credits + p_credits,
+        updated_at = NOW()
+    WHERE user_id = p_user_id;
+
+    -- Log the credit grant if purchase_id is provided
+    IF p_purchase_id IS NOT NULL THEN
+        UPDATE public.purchases
+        SET metadata = metadata || jsonb_build_object('credits_granted_at', NOW())
+        WHERE id = p_purchase_id;
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;</pre>
+        </div>
+
+        <h4>7b. Make Processing Jobs Fields Optional</h4>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Make edge_design_id optional in processing_jobs
+ALTER TABLE public.processing_jobs
+ALTER COLUMN edge_design_id DROP NOT NULL;</pre>
+        </div>
+
+        <h4>7c. Fix User Credits Unique Constraint</h4>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Add unique constraint to user_credits if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'user_credits_user_id_key'
+    ) THEN
+        ALTER TABLE public.user_credits
+        ADD CONSTRAINT user_credits_user_id_key UNIQUE (user_id);
+    END IF;
+END $$;</pre>
+        </div>
+
+        <h4>7d. Add PDF Dimensions to Edge Designs</h4>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Add PDF dimensions columns to edge_designs table
+ALTER TABLE public.edge_designs
+ADD COLUMN IF NOT EXISTS pdf_width NUMERIC,
+ADD COLUMN IF NOT EXISTS pdf_height NUMERIC,
+ADD COLUMN IF NOT EXISTS pdf_unit TEXT DEFAULT 'pt';</pre>
+        </div>
+
+        <h4>7e. Add Regeneration Counter</h4>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Add regeneration counter to processing_jobs
+ALTER TABLE public.processing_jobs
+ADD COLUMN IF NOT EXISTS regeneration_count INTEGER DEFAULT 0 NOT NULL;</pre>
+        </div>
+
+        <h4>7f. Add Edge Colors</h4>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Add color fields to edge_designs
+ALTER TABLE public.edge_designs
+ADD COLUMN IF NOT EXISTS side_color TEXT,
+ADD COLUMN IF NOT EXISTS top_color TEXT,
+ADD COLUMN IF NOT EXISTS bottom_color TEXT;</pre>
+        </div>
+
+        <h4>7g. Setup Storage Buckets</h4>
+        <div class="sql-block">
+            <button class="copy-btn" onclick="copyToClipboard(this.nextElementSibling)">Copy</button>
+            <pre>-- Create storage buckets if they don't exist
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES
+    ('pdfs', 'pdfs', true, 104857600, ARRAY['application/pdf']),
+    ('edge-images', 'edge-images', false, 10485760, ARRAY['image/png', 'image/jpeg', 'image/jpg', 'image/webp']),
+    ('processed-pdfs', 'processed-pdfs', true, 104857600, ARRAY['application/pdf'])
+ON CONFLICT (id) DO UPDATE SET
+    public = EXCLUDED.public,
+    file_size_limit = EXCLUDED.file_size_limit,
+    allowed_mime_types = EXCLUDED.allowed_mime_types;</pre>
+        </div>
+    </div>
+
+    <div class="success">
+        <strong>✅ Complete!</strong> After running all these SQL commands, your Supabase database will be fully set up with all the latest schema changes.
+    </div>
+
+    <script>
+        function copyToClipboard(element) {
+            const text = element.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = element.previousElementSibling;
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.style.background = '#10b981';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = '#4f46e5';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>
