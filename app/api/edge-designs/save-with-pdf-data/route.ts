@@ -24,8 +24,16 @@ async function createSolidColorImage(hexColor: string, width: number = 100, heig
 // POST: Save edge design with PDF dimensions and processing data
 export async function POST(req: NextRequest) {
   try {
+    console.log('Save-with-PDF-data API: Starting request');
+
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    console.log('Save-with-PDF-data API: Auth check', {
+      hasUser: !!user,
+      userId: user?.id,
+      authError: authError?.message
+    });
 
     if (authError || !user) {
       return NextResponse.json(
@@ -33,6 +41,18 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+
+    const requestData = await req.json();
+    console.log('Save-with-PDF-data API: Request data', {
+      name: requestData.name,
+      hasEdgeFiles: !!requestData.edgeFiles,
+      edgeFileTypes: requestData.edgeFiles ? Object.keys(requestData.edgeFiles) : [],
+      pdfWidth: requestData.pdfWidth,
+      pdfHeight: requestData.pdfHeight,
+      pageCount: requestData.pageCount,
+      bleedType: requestData.bleedType,
+      edgeType: requestData.edgeType
+    });
 
     const {
       name,
@@ -42,7 +62,7 @@ export async function POST(req: NextRequest) {
       pageCount,
       bleedType,
       edgeType
-    } = await req.json();
+    } = requestData;
 
     if (!name) {
       return NextResponse.json(
@@ -58,9 +78,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log('Save-with-PDF-data API: Creating service client and paths');
+
     const serviceSupabase = createServiceRoleClient();
     const designId = crypto.randomUUID();
     const basePath = `users/${user.id}/designs/${designId}`;
+
+    console.log('Save-with-PDF-data API: Generated paths', {
+      designId,
+      basePath
+    });
 
     // Upload edge images to user-specific storage
     let finalSideImagePath: string | undefined;
@@ -158,6 +185,22 @@ export async function POST(req: NextRequest) {
     }
 
     // Insert the edge design with PDF data using the specific design ID
+    console.log('Save-with-PDF-data API: Inserting design to database', {
+      designId,
+      userId: user.id,
+      name: name.trim(),
+      hasSideImage: !!finalSideImagePath,
+      hasTopImage: !!finalTopImagePath,
+      hasBottomImage: !!finalBottomImagePath,
+      topEdgeColor,
+      bottomEdgeColor,
+      pdfWidth,
+      pdfHeight,
+      pageCount,
+      bleedType,
+      edgeType
+    });
+
     const { data: newDesign, error: insertError } = await serviceSupabase
       .from('edge_designs')
       .insert({
@@ -198,9 +241,18 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error saving edge design with PDF data:', error);
+    console.error('Error saving edge design with PDF data - DETAILED:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      error: error,
+      name: error instanceof Error ? error.name : undefined
+    });
+
     return NextResponse.json(
-      { error: 'Failed to save edge design with PDF data' },
+      {
+        error: 'Failed to save edge design with PDF data',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
