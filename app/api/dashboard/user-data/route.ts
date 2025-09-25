@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { createServiceRoleClient } from '@/lib/supabase/service-role';
 
 export async function GET(req: NextRequest) {
   try {
@@ -43,38 +42,20 @@ export async function GET(req: NextRequest) {
 
     console.log('Dashboard API: User authenticated:', user.id);
 
-    // Use service role client for database operations (bypasses RLS)
-    let serviceSupabase;
-    try {
-      console.log('Dashboard API: Creating service role client...');
-      serviceSupabase = createServiceRoleClient();
-      console.log('Dashboard API: Service role client created successfully');
-    } catch (serviceError) {
-      console.error('Dashboard API: Failed to create service role client:', {
-        error: serviceError instanceof Error ? serviceError.message : 'Unknown error',
-        stack: serviceError instanceof Error ? serviceError.stack : undefined,
-        env_url: process.env.NEXT_PUBLIC_SUPABASE_URL,
-        has_service_key: !!process.env.SUPABASE_SERVICE_ROLE_KEY
-      });
-      return NextResponse.json(
-        { error: 'Failed to initialize database client', details: serviceError instanceof Error ? serviceError.message : 'Unknown error' },
-        { status: 500 }
-      );
-    }
-
-    // Get user profile data from public.users table
-    const { data: userProfile, error: userProfileError } = await serviceSupabase
+    // Get user profile data from public.users table using regular client
+    // Since the user is authenticated, RLS should allow access to their own data
+    const { data: userProfile, error: userProfileError } = await supabase
       .from('users')
       .select('first_name, surname, name, email')
       .eq('id', user.id)
       .single();
 
     if (userProfileError) {
-      console.log('User profile not found in public.users, using auth data');
+      console.log('User profile not found in public.users, using auth data:', userProfileError);
     }
 
     // Get user credits with detailed error handling
-    const { data: creditsData, error: creditsError } = await serviceSupabase
+    const { data: creditsData, error: creditsError } = await supabase
       .from('user_credits')
       .select('total_credits, used_credits, created_at, updated_at')
       .eq('user_id', user.id)
@@ -95,7 +76,7 @@ export async function GET(req: NextRequest) {
       if (creditsError.code === 'PGRST116' || creditsError.message.includes('No rows') || creditsError.message.includes('not found')) {
         console.log('Creating initial credits record for user:', user.id);
 
-        const { data: newCreditsData, error: insertError } = await serviceSupabase
+        const { data: newCreditsData, error: insertError } = await supabase
           .from('user_credits')
           .insert({
             user_id: user.id,
@@ -156,7 +137,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get edge designs count
-    const { data: designsData, error: designsError } = await serviceSupabase
+    const { data: designsData, error: designsError } = await supabase
       .from('edge_designs')
       .select('id')
       .eq('user_id', user.id)
@@ -167,7 +148,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get processing jobs count
-    const { data: jobsData, error: jobsError } = await serviceSupabase
+    const { data: jobsData, error: jobsError } = await supabase
       .from('processing_jobs')
       .select('id')
       .eq('user_id', user.id);
@@ -177,7 +158,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get recent purchases
-    const { data: purchasesData, error: purchasesError } = await serviceSupabase
+    const { data: purchasesData, error: purchasesError } = await supabase
       .from('purchases')
       .select('*')
       .eq('user_id', user.id)
