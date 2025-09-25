@@ -181,11 +181,6 @@ export default async function Home() {
           </Card>
         </div>
 
-        {/* How-to Guide Section */}
-        <div className="mb-16">
-          <HowToGuideWrapper />
-        </div>
-
         {/* How It Works */}
         <div className="text-center mb-16">
           <h2 className="text-3xl font-bold mb-8">How It Works</h2>
@@ -333,6 +328,11 @@ export default async function Home() {
               )}
             </CardContent>
           </Card>
+        </div>
+
+        {/* How-to Guide Section */}
+        <div className="mb-16">
+          <HowToGuideWrapper />
         </div>
 
         <SiteFooter />
