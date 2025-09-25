@@ -905,9 +905,14 @@ export default function CreatePage() {
       }
       if (topEdgeImageFile) {
         edgeFiles.top = await fileToBase64(topEdgeImageFile);
+      } else if (topEdgeColor && topEdgeColor !== "none") {
+        edgeFiles.top = topEdgeColor; // Pass color value directly
       }
+
       if (bottomEdgeImageFile) {
         edgeFiles.bottom = await fileToBase64(bottomEdgeImageFile);
+      } else if (bottomEdgeColor && bottomEdgeColor !== "none") {
+        edgeFiles.bottom = bottomEdgeColor; // Pass color value directly
       }
 
       const designData = {
@@ -919,6 +924,19 @@ export default function CreatePage() {
         bleedType: bleedType,
         edgeType: 'all-edges' // Always all-edges for now
       };
+
+      console.log('Auto-saving design with data:', {
+        name: autoName,
+        hasUser: !!user,
+        userId: user?.id,
+        hasEdgeFiles: Object.keys(edgeFiles).length > 0,
+        edgeFileTypes: Object.keys(edgeFiles),
+        pdfWidth: bookWidth,
+        pdfHeight: bookHeight,
+        pageCount: totalPages,
+        bleedType,
+        edgeType: 'all-edges'
+      });
 
       const response = await fetch('/api/edge-designs/save-with-pdf-data', {
         method: 'POST',
@@ -933,7 +951,12 @@ export default function CreatePage() {
         setSavedDesignName(autoName);
         console.log('Design automatically saved:', autoName);
       } else {
-        console.error('Failed to auto-save design');
+        const errorText = await response.text();
+        console.error('Failed to auto-save design:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
       }
     } catch (error) {
       console.error('Error auto-saving design:', error);
