@@ -28,27 +28,39 @@ export function ResetPasswordForm({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [resetComplete, setResetComplete] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    // Check if we have the recovery code from the URL
+    // Check if we have the recovery code from the URL or if we already have a session
     const code = searchParams.get('code');
 
-    if (!code) {
-      setError('Invalid or expired reset link. Please request a new password reset.');
-      return;
-    }
-
-    // Exchange the code for a session
-    const initializeSession = async () => {
+    // If no code, check if we already have a valid session (could be from a previous code exchange)
+    const checkSession = async () => {
       try {
         const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (session) {
+          setSessionReady(true);
+          return;
+        }
+
+        // No session and no code = invalid link
+        if (!code) {
+          setError('Invalid or expired reset link. Please request a new password reset.');
+          return;
+        }
+
+        // Exchange the code for a session
         const { error } = await supabase.auth.exchangeCodeForSession(code);
 
         if (error) {
           console.error('Error exchanging code for session:', error);
           setError('Invalid or expired reset link. Please request a new password reset.');
+        } else {
+          setSessionReady(true);
         }
       } catch (error) {
         console.error('Error initializing session:', error);
@@ -56,7 +68,7 @@ export function ResetPasswordForm({
       }
     };
 
-    initializeSession();
+    checkSession();
   }, [searchParams]);
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -214,7 +226,7 @@ export function ResetPasswordForm({
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={isLoading || !!error}>
+              <Button type="submit" className="w-full" disabled={isLoading || !!error || !sessionReady}>
                 {isLoading ? (
                   <>
                     <Key className="mr-2 h-4 w-4 animate-spin" />
