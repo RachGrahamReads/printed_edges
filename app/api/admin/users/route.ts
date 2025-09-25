@@ -10,13 +10,26 @@ export async function GET(req: NextRequest) {
     console.log('Admin access confirmed for users API');
 
     // Use service role client for admin operations to bypass RLS
-    const supabase = createServiceRoleClient();
+    let supabase;
+    try {
+      supabase = createServiceRoleClient();
+      console.log('Service role client created successfully');
+    } catch (serviceError) {
+      console.error('Failed to create service role client:', serviceError);
+      return NextResponse.json(
+        { error: 'Failed to initialize service role client', details: serviceError instanceof Error ? serviceError.message : 'Unknown error' },
+        { status: 500 }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
 
     const search = searchParams.get('search') || '';
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = (page - 1) * limit;
+
+    console.log('Query parameters:', { search, page, limit, offset });
 
     let query = supabase
       .from('admin_user_overview')
@@ -32,10 +45,29 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
+    console.log('Executing admin_user_overview query...');
     const { data: users, error, count } = await query;
 
+    console.log('Query result:', {
+      hasUsers: !!users,
+      userCount: users?.length || 0,
+      totalCount: count,
+      error: error ? {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      } : null
+    });
+
     if (error) {
-      console.error('Error fetching users:', error);
+      console.error('Error fetching users - DETAILED:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        fullError: JSON.stringify(error, null, 2)
+      });
       throw error;
     }
 
