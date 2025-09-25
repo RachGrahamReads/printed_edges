@@ -30,11 +30,21 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error("Missing required environment variables: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const requestData: ChunkRequest = await req.json();
+    let requestData: ChunkRequest;
+    try {
+      requestData = await req.json();
+    } catch (parseError) {
+      throw new Error(`Failed to parse request JSON: ${parseError.message}`);
+    }
 
     console.log("Chunking PDF for session:", requestData.sessionId);
     console.log("Total pages:", requestData.totalPages);

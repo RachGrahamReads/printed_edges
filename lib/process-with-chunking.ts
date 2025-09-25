@@ -278,8 +278,11 @@ export async function processPDFWithChunking(
 
     console.log('Merging processed chunks...');
 
-    // Merge all processed chunks
+    // Merge all processed chunks with extended timeout for large PDFs
     const outputPath = `${sessionId}/final.pdf`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for merge
+
     const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-pdf-chunks`, {
       method: 'POST',
       headers: {
@@ -292,8 +295,11 @@ export async function processPDFWithChunking(
         processedChunkPaths,
         totalChunks: chunks.length,
         outputPath
-      })
+      }),
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!mergeResponse.ok) {
       const errorText = await mergeResponse.text();

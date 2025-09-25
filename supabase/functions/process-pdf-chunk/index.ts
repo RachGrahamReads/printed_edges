@@ -48,11 +48,21 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error("Missing required environment variables: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const requestData: ChunkProcessRequest = await req.json();
+    let requestData: ChunkProcessRequest;
+    try {
+      requestData = await req.json();
+    } catch (parseError) {
+      throw new Error(`Failed to parse request JSON: ${parseError.message}`);
+    }
 
     console.log(`Processing chunk ${requestData.chunkIndex + 1}/${requestData.totalChunks}`);
     console.log(`Global pages: ${requestData.startPage + 1}-${requestData.endPage + 1}`);
@@ -122,16 +132,20 @@ serve(async (req) => {
 
       // Position content based on bleed type and page side
       let xOffset = 0;
-      let yOffset = requestData.bleedType === "add_bleed" ? bleedPoints : 0;
+      let yOffset = 0;
 
       if (requestData.bleedType === "add_bleed") {
-        // For outer-edge bleed: only even pages (left side) get offset
-        // Odd pages stay at x=0 (bleed extends to the right)
-        // Even pages get offset to make bleed extend to the left
-        if (globalPageIndex % 2 === 0) {
-          xOffset = bleedPoints; // Even pages (left side): content offset right, bleed on left
+        // Y offset: content centered with equal bleed top and bottom
+        // Since we added (2 * bleedPoints) to height, content should be offset by bleedPoints from bottom
+        yOffset = bleedPoints; // This creates bleedPoints space at bottom AND top
+
+        // X offset for spine/outer edge bleed:
+        // Page 0 (right side): no x offset, bleed extends to right (outer edge)
+        // Page 1 (left side): x offset, bleed extends to left (outer edge)
+        if (globalPageIndex % 2 === 1) {
+          xOffset = bleedPoints; // Odd pages (left side): content offset right, bleed on left
         }
-        // Odd pages (right side): xOffset = 0, content at left, bleed extends right
+        // Even pages (right side): xOffset = 0, content at left, bleed extends right
       }
 
       // Copy the page contents using embedPage instead of drawPage
@@ -156,7 +170,9 @@ serve(async (req) => {
 
       // Add side edge
       if ((requestData.edgeType === 'side-only' || requestData.edgeType === 'all-edges') &&
-          requestData.sliceStoragePaths.side && requestData.sliceStoragePaths.side.masked[leafNumber]) {
+          requestData.sliceStoragePaths.side &&
+          requestData.sliceStoragePaths.side.masked &&
+          requestData.sliceStoragePaths.side.masked[leafNumber]) {
 
         await addEdgeToPage(
           supabase, newPage, processedDoc, loadedSlices,
@@ -168,7 +184,9 @@ serve(async (req) => {
       // Add top edge (access array in reverse order)
       const topLeafIndex = totalLeaves - 1 - leafNumber;
       if (requestData.edgeType === 'all-edges' &&
-          requestData.sliceStoragePaths.top && requestData.sliceStoragePaths.top.masked[topLeafIndex]) {
+          requestData.sliceStoragePaths.top &&
+          requestData.sliceStoragePaths.top.masked &&
+          requestData.sliceStoragePaths.top.masked[topLeafIndex]) {
 
         await addEdgeToPage(
           supabase, newPage, processedDoc, loadedSlices,
@@ -179,7 +197,9 @@ serve(async (req) => {
 
       // Add bottom edge
       if (requestData.edgeType === 'all-edges' &&
-          requestData.sliceStoragePaths.bottom && requestData.sliceStoragePaths.bottom.masked[leafNumber]) {
+          requestData.sliceStoragePaths.bottom &&
+          requestData.sliceStoragePaths.bottom.masked &&
+          requestData.sliceStoragePaths.bottom.masked[leafNumber]) {
 
         await addEdgeToPage(
           supabase, newPage, processedDoc, loadedSlices,
@@ -302,10 +322,13 @@ async function addEdgeToPage(
       imageToUse = loadedSlices[slicePath];
     }
 
-    const flipHorizontally = globalPageIndex % 2 !== 0; // Even pages (back pages) get flipped
+    const flipHorizontally = globalPageIndex % 2 !== 0; // Odd pages (left pages) get flipped
 
     // Position and draw the edge based on type
     if (edgeType === 'side') {
+      // For outer edge gilding:
+      // Even pages (right side): edge goes on right side (outer edge)
+      // Odd pages (left side): edge goes on left side (outer edge)
       let sideX = globalPageIndex % 2 === 0 ? newWidth - edgeStripWidth : 0;
 
       if (flipHorizontally) {
