@@ -205,9 +205,46 @@ export default function RegeneratePage() {
   }
 
   if (!design) {
-    return <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
-      <div>Design not found</div>
-    </div>;
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="max-w-4xl mx-auto p-8">
+          {/* Navigation */}
+          <nav className="flex justify-between items-center mb-8">
+            <Link href="/dashboard" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </Link>
+            <HelpButton />
+          </nav>
+
+          {/* Error Message */}
+          <div className="flex items-center justify-center min-h-[400px]">
+            <Card className="max-w-lg w-full">
+              <CardContent className="p-8 text-center">
+                <AlertCircle className="h-12 w-12 mx-auto text-red-500 mb-4" />
+                <h2 className="text-xl font-semibold mb-4">Problem Retrieving Design</h2>
+                <p className="text-gray-600 mb-6">
+                  There was a problem retrieving your design. Please contact support or email us for help.
+                  We're sorry for the inconvenience!
+                </p>
+                <div className="space-y-3">
+                  <HelpButton />
+                  <p className="text-sm text-gray-500">
+                    or email{" "}
+                    <a
+                      href="mailto:hello@rachgrahamreads.com"
+                      className="text-blue-600 hover:text-blue-800 underline"
+                    >
+                      hello@rachgrahamreads.com
+                    </a>
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const daysLeft = (() => {
