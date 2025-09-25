@@ -26,10 +26,10 @@ export default async function Home() {
               <Link href="/create">
                 <Button variant="ghost" size="sm">Try Free</Button>
               </Link>
-              <HowToGuideLinkWrapper />
               <Link href="/pricing">
                 <Button variant="ghost" size="sm">Pricing</Button>
               </Link>
+              <HowToGuideLinkWrapper />
               <HelpButtonWrapper />
               {user ? (
                 <Link href="/dashboard">
