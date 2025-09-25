@@ -32,13 +32,34 @@ export function ResetPasswordForm({
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    // Check if we have the proper tokens from the URL
-    const accessToken = searchParams.get('access_token');
-    const refreshToken = searchParams.get('refresh_token');
+    // Check if we have the proper recovery tokens from the URL
+    const token = searchParams.get('token');
+    const type = searchParams.get('type');
 
-    if (!accessToken || !refreshToken) {
+    if (!token || type !== 'recovery') {
       setError('Invalid or expired reset link. Please request a new password reset.');
+      return;
     }
+
+    // Initialize the session with the recovery token
+    const initializeSession = async () => {
+      try {
+        const supabase = createClient();
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: token,
+          type: 'recovery',
+        });
+
+        if (error) {
+          setError('Invalid or expired reset link. Please request a new password reset.');
+        }
+      } catch (error) {
+        console.error('Error verifying recovery token:', error);
+        setError('Invalid or expired reset link. Please request a new password reset.');
+      }
+    };
+
+    initializeSession();
   }, [searchParams]);
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -196,7 +217,7 @@ export function ResetPasswordForm({
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={isLoading || !!searchParams.get('error')}>
+              <Button type="submit" className="w-full" disabled={isLoading || !!error}>
                 {isLoading ? (
                   <>
                     <Key className="mr-2 h-4 w-4 animate-spin" />
