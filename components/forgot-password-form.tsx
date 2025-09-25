@@ -40,28 +40,7 @@ export function ForgotPasswordForm({
     }
 
     try {
-      // First check if user exists
-      const checkResponse = await fetch('/api/auth/check-user-exists', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      const checkData = await checkResponse.json();
-
-      if (!checkResponse.ok) {
-        throw new Error(checkData.error || 'Failed to check user');
-      }
-
-      if (!checkData.exists) {
-        setError('No account found with that email address. Please check your email or sign up for a new account.');
-        setIsLoading(false);
-        return;
-      }
-
-      // User exists, send reset email
+      // Send reset email directly - Supabase will only send to existing users
       const supabase = createClient();
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
@@ -72,7 +51,7 @@ export function ForgotPasswordForm({
       }
 
       setEmailSent(true);
-      setMessage(`Password reset email sent to ${email}. Please check your inbox and spam folder.`);
+      setMessage(`If an account with ${email} exists, we've sent a password reset link. Please check your inbox and spam folder.`);
 
     } catch (error: unknown) {
       console.error('Password reset error:', error);
