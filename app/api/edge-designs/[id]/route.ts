@@ -21,6 +21,8 @@ export async function GET(
     // Await params as required by Next.js 15
     const { id } = await params;
 
+    console.log('Fetching design with ID:', id, 'for user:', user.id);
+
     const serviceSupabase = createServiceRoleClient();
 
     const { data: design, error: designError } = await serviceSupabase
@@ -31,7 +33,17 @@ export async function GET(
       .eq('is_active', true)
       .single();
 
+    console.log('Design query result:', {
+      design: design ? { id: design.id, name: design.name, user_id: design.user_id, is_active: design.is_active } : null,
+      error: designError
+    });
+
     if (designError || !design) {
+      console.error('Design not found:', {
+        designId: id,
+        userId: user.id,
+        error: designError
+      });
       return NextResponse.json(
         { error: 'Design not found or access denied' },
         { status: 404 }
