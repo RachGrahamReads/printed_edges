@@ -53,7 +53,7 @@ This message was sent automatically from the Printed Edges help system.
     if (!resendApiKey) {
       console.error('RESEND_API_KEY environment variable is not set');
       return NextResponse.json(
-        { error: 'Email service is not configured' },
+        { error: 'Email service is not configured. Please contact support directly at hello@rachgrahamreads.com' },
         { status: 500 }
       );
     }
@@ -75,9 +75,9 @@ This message was sent automatically from the Printed Edges help system.
 
     if (!resendResponse.ok) {
       const errorData = await resendResponse.text();
-      console.error('Resend API error:', errorData);
+      console.error('Resend API error:', resendResponse.status, errorData);
       return NextResponse.json(
-        { error: 'Failed to send email notification' },
+        { error: 'Failed to send email notification. Please contact support directly at hello@rachgrahamreads.com' },
         { status: 500 }
       );
     }

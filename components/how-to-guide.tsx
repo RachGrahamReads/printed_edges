@@ -125,7 +125,12 @@ Save as an image (jpeg, or png – must be png if using a transparent background
       title: "Why use a transparent background?",
       content: `Note: This section is only relevant if you already have images and bleed in your PDF.
 
-If you have white background in your uploaded edge image, these will be printed as white into the bleed and safety buffer zone, which will override your existing images in this area. You will need to use a transparent background, and a PNG file type, if you do not want this to happen.`
+If you have white background in your uploaded edge image, these will be printed as white into the bleed and safety buffer zone, which will override your existing images in this area. You will need to use a transparent background, and a PNG file type, if you do not want this to happen.
+
+Examples:
+Existing background image with transparent background edge design:`,
+      images: ["/help/transparent.png", "/help/nontransparent.png"],
+      imageLabels: ["Transparent background (recommended)", "Non-transparent background (overrides existing images)"]
     },
     colors: {
       title: "Selecting top and bottom edge colours",
@@ -304,6 +309,26 @@ However, if you are intentionally using an off-size image, you may find the foll
                             height={200}
                             className="rounded border max-w-full h-auto"
                           />
+                        </div>
+                      )}
+                      {tip.images && (
+                        <div className="mt-3 space-y-3">
+                          {tip.images.map((image, index) => (
+                            <div key={index}>
+                              {tip.imageLabels && tip.imageLabels[index] && (
+                                <p className="text-sm font-medium text-gray-700 mb-2">
+                                  {tip.imageLabels[index]}
+                                </p>
+                              )}
+                              <Image
+                                src={image}
+                                alt={`${tip.title} - ${tip.imageLabels ? tip.imageLabels[index] : `Image ${index + 1}`}`}
+                                width={400}
+                                height={200}
+                                className="rounded border max-w-full h-auto"
+                              />
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
