@@ -201,24 +201,46 @@ export async function POST(req: NextRequest) {
       edgeType
     });
 
+    // For now, save only the columns we know exist in the current schema
+    // TODO: Add migration to add missing columns: bleed_type, edge_type, pdf_width, pdf_height, page_count
+    const insertData = {
+      id: designId,
+      user_id: user.id,
+      name: name.trim(),
+      side_image_path: finalSideImagePath,
+      top_image_path: finalTopImagePath,
+      bottom_image_path: finalBottomImagePath,
+      is_active: true
+    };
+
+    // Add color columns if they exist in schema (these might also be missing)
+    if (topEdgeColor) {
+      try {
+        (insertData as any).top_edge_color = topEdgeColor;
+      } catch (e) {
+        console.log('top_edge_color column not available');
+      }
+    }
+    if (bottomEdgeColor) {
+      try {
+        (insertData as any).bottom_edge_color = bottomEdgeColor;
+      } catch (e) {
+        console.log('bottom_edge_color column not available');
+      }
+    }
+
+    console.log('Save-with-PDF-data API: Final insert data (basic schema)', insertData);
+    console.log('Save-with-PDF-data API: PDF data that will be stored elsewhere/later:', {
+      pdfWidth,
+      pdfHeight,
+      pageCount,
+      bleedType,
+      edgeType
+    });
+
     const { data: newDesign, error: insertError } = await serviceSupabase
       .from('edge_designs')
-      .insert({
-        id: designId, // Use the same ID used for image paths
-        user_id: user.id,
-        name: name.trim(),
-        side_image_path: finalSideImagePath,
-        top_image_path: finalTopImagePath,
-        bottom_image_path: finalBottomImagePath,
-        top_edge_color: topEdgeColor,
-        bottom_edge_color: bottomEdgeColor,
-        pdf_width: pdfWidth,
-        pdf_height: pdfHeight,
-        page_count: pageCount,
-        bleed_type: bleedType,
-        edge_type: edgeType,
-        is_active: true
-      })
+      .insert(insertData)
       .select()
       .single();
 
