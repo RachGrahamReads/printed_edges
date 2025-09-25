@@ -9,10 +9,20 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    console.log('=== EDGE DESIGNS API DEBUG ===');
+    console.log('Requested design ID:', id);
+
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
+    console.log('Auth result:', {
+      hasUser: !!user,
+      userId: user?.id,
+      authError: authError?.message
+    });
+
     if (authError || !user) {
+      console.log('Authentication failed, returning 401');
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
@@ -23,6 +33,20 @@ export async function GET(
 
     const serviceSupabase = createServiceRoleClient();
 
+    // First, let's check if the design exists at all (without user_id filter)
+    const { data: designExists, error: existsError } = await serviceSupabase
+      .from('edge_designs')
+      .select('id, user_id, is_active')
+      .eq('id', id)
+      .single();
+
+    console.log('Design existence check:', {
+      exists: !!designExists,
+      designData: designExists,
+      error: existsError
+    });
+
+    // Now try the full query with all filters
     const { data: design, error: designError } = await serviceSupabase
       .from('edge_designs')
       .select('*')
@@ -31,23 +55,34 @@ export async function GET(
       .eq('is_active', true)
       .single();
 
-    console.log('Design query result:', {
+    console.log('Full design query result:', {
       design: design ? { id: design.id, name: design.name, user_id: design.user_id, is_active: design.is_active } : null,
       error: designError
     });
 
     if (designError || !design) {
-      console.error('Design not found:', {
+      console.error('Design not found with filters:', {
         designId: id,
         userId: user.id,
-        error: designError
+        error: designError,
+        designExistsData: designExists
       });
       return NextResponse.json(
-        { error: 'Design not found or access denied' },
+        {
+          error: 'Design not found or access denied',
+          debug: {
+            designId: id,
+            userId: user.id,
+            designExists: !!designExists,
+            designOwnerId: designExists?.user_id,
+            isActive: designExists?.is_active
+          }
+        },
         { status: 404 }
       );
     }
 
+    console.log('Successfully found design, returning data');
     return NextResponse.json({ design });
 
   } catch (error) {
