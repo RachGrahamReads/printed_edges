@@ -128,7 +128,7 @@ Save as an image (jpeg, or png – must be png if using a transparent background
 If you have white background in your uploaded edge image, these will be printed as white into the bleed and safety buffer zone, which will override your existing images in this area. You will need to use a transparent background, and a PNG file type, if you do not want this to happen.
 
 Examples:
-Existing background image with transparent background edge design:`,
+PDF with existing background, showing both transparent and non-transparent backgrounds on edge design images:`,
       images: ["/help/transparent.png", "/help/nontransparent.png"],
       imageLabels: ["Transparent background (recommended)", "Non-transparent background (overrides existing images)"]
     },
@@ -261,7 +261,7 @@ However, if you are intentionally using an off-size image, you may find the foll
                       onClick={() => scrollToHelpTip(step.infoTip!)}
                       className="h-6 w-6 p-0 text-blue-600 hover:text-blue-800"
                     >
-                      ℹ️
+                      <Info className="h-4 w-4" />
                     </Button>
                   )}
                 </h3>
