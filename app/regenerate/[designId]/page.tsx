@@ -61,8 +61,20 @@ export default function RegeneratePage() {
       }
 
       // Load design details
-      const designResponse = await fetch(`/api/edge-designs/${designId}`);
+      const apiUrl = `/api/edge-designs/${designId}`;
+      console.log('Fetching design from URL:', apiUrl);
+
+      const designResponse = await fetch(apiUrl);
+      console.log('Design response status:', designResponse.status, designResponse.statusText);
+
       if (!designResponse.ok) {
+        const errorText = await designResponse.text();
+        console.error('Design fetch error:', {
+          status: designResponse.status,
+          statusText: designResponse.statusText,
+          responseText: errorText,
+          url: apiUrl
+        });
         throw new Error('Design not found');
       }
 
