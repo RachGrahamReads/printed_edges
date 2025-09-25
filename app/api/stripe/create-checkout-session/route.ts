@@ -27,6 +27,10 @@ export async function POST(req: NextRequest) {
 
     const product = purchaseType === 'single_image' ? PRODUCTS.SINGLE_IMAGE : PRODUCTS.THREE_IMAGES;
 
+    // Get price details from Stripe
+    const priceData = await stripe.prices.retrieve(product.priceId);
+    const productAmount = priceData.unit_amount || 0;
+
     // Validate discount code if provided - using Stripe-only validation
     let discountCouponId = null;
     let discountCodeData = null;
@@ -96,14 +100,7 @@ export async function POST(req: NextRequest) {
       payment_method_types: ['card'],
       line_items: [
         {
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: product.name,
-              description: `Get ${product.credits} edge design credit${product.credits > 1 ? 's' : ''} to create stunning custom edges for your books`,
-            },
-            unit_amount: product.price,
-          },
+          price: product.priceId,
           quantity: 1,
         },
       ],
@@ -135,14 +132,14 @@ export async function POST(req: NextRequest) {
       .insert({
         user_id: user.id,
         stripe_session_id: session.id,
-        amount: product.price,
+        amount: productAmount,
         purchase_type: purchaseType,
         credits_granted: product.credits,
         status: 'pending',
         discount_code: discountCode || null,
         discount_amount: discountCodeData ? (
           discountCodeData.discount_type === 'percentage'
-            ? Math.round(product.price * discountCodeData.discount_value / 100)
+            ? Math.round(productAmount * discountCodeData.discount_value / 100)
             : discountCodeData.discount_value
         ) : null,
       });
