@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 
+// Updated: 2025-09-25 - Fix for production deployment
+
 // GET: Fetch a specific edge design
 export async function GET(
   req: NextRequest,
