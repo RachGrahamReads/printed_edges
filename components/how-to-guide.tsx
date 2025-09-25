@@ -163,6 +163,31 @@ However, if you are intentionally using an off-size image, you may find the foll
     setExpandedTip(expandedTip === tipKey ? null : tipKey);
   };
 
+  const scrollToHelpTip = (tipKey: string) => {
+    // First expand the guide if it's not already expanded
+    if (!isExpanded) {
+      setIsExpanded(true);
+      // Wait for the expansion animation to complete
+      setTimeout(() => {
+        const tipElement = document.querySelector(`[data-help-tip="${tipKey}"]`);
+        if (tipElement) {
+          tipElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          // Then expand the specific tip
+          setTimeout(() => {
+            setExpandedTip(tipKey);
+          }, 300);
+        }
+      }, 300);
+    } else {
+      // If already expanded, just scroll and expand the tip
+      const tipElement = document.querySelector(`[data-help-tip="${tipKey}"]`);
+      if (tipElement) {
+        tipElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setExpandedTip(tipKey);
+      }
+    }
+  };
+
   if (!isExpanded) {
     return (
       <Card className={className}>
@@ -233,7 +258,7 @@ However, if you are intentionally using an off-size image, you may find the foll
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => toggleTip(step.infoTip!)}
+                      onClick={() => scrollToHelpTip(step.infoTip!)}
                       className="h-6 w-6 p-0 text-blue-600 hover:text-blue-800"
                     >
                       ℹ️
@@ -273,12 +298,12 @@ However, if you are intentionally using an off-size image, you may find the foll
         {/* Help Tips Section */}
         <div className="border-t pt-6">
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            💡 Help Guides
+            Help Guides
           </h2>
 
           <div className="space-y-3">
             {Object.entries(helpTips).map(([key, tip]) => (
-              <div key={key} className="border rounded-lg">
+              <div key={key} className="border rounded-lg" data-help-tip={key}>
                 <Button
                   variant="ghost"
                   onClick={() => toggleTip(key)}
