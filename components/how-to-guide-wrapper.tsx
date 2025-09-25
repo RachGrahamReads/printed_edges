@@ -7,5 +7,9 @@ interface HowToGuideWrapperProps {
 }
 
 export function HowToGuideWrapper({ className }: HowToGuideWrapperProps) {
-  return <HowToGuide className={className} />;
+  return (
+    <div data-guide="how-to">
+      <HowToGuide className={className} />
+    </div>
+  );
 }

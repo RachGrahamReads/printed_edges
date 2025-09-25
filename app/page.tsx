@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Check, FileImage, Zap, Shield } from "lucide-react";
 import { HelpButtonWrapper } from "@/components/help-button-wrapper";
 import { HowToGuideWrapper } from "@/components/how-to-guide-wrapper";
+import { HowToGuideLinkWrapper } from "@/components/how-to-guide-link-wrapper";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -25,6 +26,7 @@ export default async function Home() {
               <Link href="/create">
                 <Button variant="ghost" size="sm">Try Free</Button>
               </Link>
+              <HowToGuideLinkWrapper />
               <Link href="/pricing">
                 <Button variant="ghost" size="sm">Pricing</Button>
               </Link>

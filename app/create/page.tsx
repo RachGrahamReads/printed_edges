@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/client";
 import { processPDFWithChunking } from '@/lib/process-with-chunking';
 import { HelpButton } from "@/components/help-button";
 import { HowToGuide } from "@/components/how-to-guide";
+import { HowToGuideLink } from "@/components/how-to-guide-link";
 
 export default function CreatePage() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -1114,6 +1115,7 @@ export default function CreatePage() {
                 {credits.total_credits - credits.used_credits} credits
               </Badge>
             )}
+            <HowToGuideLink />
             <HelpButton />
             <Link href="/pricing">
               <Button variant="ghost" size="sm">Pricing</Button>
@@ -2141,7 +2143,7 @@ export default function CreatePage() {
         </div>
 
         {/* How-to Guide Section */}
-        <div className="mt-16">
+        <div className="mt-16" data-guide="how-to">
           <HowToGuide />
         </div>
 
