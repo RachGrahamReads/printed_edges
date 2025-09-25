@@ -31,32 +31,65 @@ export async function POST(req: NextRequest) {
     const priceData = await stripe.prices.retrieve(product.priceId);
     const productAmount = priceData.unit_amount || 0;
 
-    // Validate discount code if provided - using Stripe-only validation
+    // Validate discount code if provided - using Stripe Promotion Code/Coupon validation
     let discountCouponId = null;
     let discountCodeData = null;
 
     if (discountCode) {
       try {
-        // Try to retrieve the coupon directly from Stripe
-        const coupon = await stripe.coupons.retrieve(discountCode.toLowerCase());
+        // First try to find it as a promotion code (case-insensitive)
+        const promotionCodes = await stripe.promotionCodes.list({
+          code: discountCode.toUpperCase(),
+          limit: 1,
+        });
 
-        // Check if coupon is valid (not deleted and not redeemed beyond limits)
-        if (coupon.valid) {
+        if (promotionCodes.data.length > 0) {
+          const promoCode = promotionCodes.data[0];
+          const coupon = promoCode.coupon;
+
+          // Check if promotion code is active
+          if (!promoCode.active) {
+            return NextResponse.json(
+              { error: 'Discount code is no longer active' },
+              { status: 400 }
+            );
+          }
+
+          // Check if coupon is valid
+          if (!coupon.valid) {
+            return NextResponse.json(
+              { error: 'Discount code is no longer valid' },
+              { status: 400 }
+            );
+          }
+
           discountCouponId = coupon.id;
-          // Store basic info for purchase record
           discountCodeData = {
             discount_type: coupon.percent_off ? 'percentage' : 'fixed_amount',
-            discount_value: coupon.percent_off || coupon.amount_off || 0,
-            code: discountCode.toUpperCase()
+            discount_value: coupon.percent_off || (coupon.amount_off ? coupon.amount_off / 100 : 0),
+            code: promoCode.code
           };
         } else {
-          return NextResponse.json(
-            { error: 'Discount code is no longer valid' },
-            { status: 400 }
-          );
+          // If no promotion code found, try as a coupon ID (for backward compatibility)
+          const coupon = await stripe.coupons.retrieve(discountCode.toLowerCase());
+
+          // Check if coupon is valid
+          if (!coupon.valid) {
+            return NextResponse.json(
+              { error: 'Discount code is no longer valid' },
+              { status: 400 }
+            );
+          }
+
+          discountCouponId = coupon.id;
+          discountCodeData = {
+            discount_type: coupon.percent_off ? 'percentage' : 'fixed_amount',
+            discount_value: coupon.percent_off || (coupon.amount_off ? coupon.amount_off / 100 : 0),
+            code: discountCode.toUpperCase()
+          };
         }
       } catch (error: any) {
-        // If coupon doesn't exist in Stripe, it's invalid
+        // If neither promotion code nor coupon exists, it's invalid
         return NextResponse.json(
           { error: 'Invalid discount code' },
           { status: 400 }
@@ -140,7 +173,7 @@ export async function POST(req: NextRequest) {
         discount_amount: discountCodeData ? (
           discountCodeData.discount_type === 'percentage'
             ? Math.round(productAmount * discountCodeData.discount_value / 100)
-            : discountCodeData.discount_value
+            : Math.round(discountCodeData.discount_value * 100) // Convert dollars to cents
         ) : null,
       });
 
