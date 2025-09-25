@@ -27,9 +27,24 @@ export async function POST(req: NextRequest) {
 
     const product = purchaseType === 'single_image' ? PRODUCTS.SINGLE_IMAGE : PRODUCTS.THREE_IMAGES;
 
-    // Get price details from Stripe
-    const priceData = await stripe.prices.retrieve(product.priceId);
-    const productAmount = priceData.unit_amount || 0;
+    // Get price details from Stripe or use fallback
+    let productAmount = 0;
+    let useFallbackPricing = false;
+
+    if (product.priceId) {
+      try {
+        const priceData = await stripe.prices.retrieve(product.priceId);
+        productAmount = priceData.unit_amount || 0;
+      } catch (error) {
+        console.warn('Failed to retrieve Stripe price, using fallback pricing');
+        useFallbackPricing = true;
+        productAmount = product.fallbackPrice;
+      }
+    } else {
+      console.warn('No Stripe Price ID configured, using fallback pricing');
+      useFallbackPricing = true;
+      productAmount = product.fallbackPrice;
+    }
 
     // Validate discount code if provided - using Stripe Promotion Code/Coupon validation
     let discountCouponId = null;
@@ -132,7 +147,17 @@ export async function POST(req: NextRequest) {
       customer: stripeCustomerId,
       payment_method_types: ['card'],
       line_items: [
-        {
+        useFallbackPricing ? {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: product.fallbackName,
+              description: `Get ${product.credits} edge design credit${product.credits > 1 ? 's' : ''} to create stunning custom edges for your books`,
+            },
+            unit_amount: product.fallbackPrice,
+          },
+          quantity: 1,
+        } : {
           price: product.priceId,
           quantity: 1,
         },
