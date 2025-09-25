@@ -31,12 +31,20 @@ export async function POST(req: NextRequest) {
     let productAmount = 0;
     let useFallbackPricing = false;
 
+    console.log('Product config:', {
+      purchaseType,
+      priceId: product.priceId,
+      hasPrice: !!product.priceId
+    });
+
     if (product.priceId) {
       try {
+        console.log('Attempting to retrieve Stripe price:', product.priceId);
         const priceData = await stripe.prices.retrieve(product.priceId);
         productAmount = priceData.unit_amount || 0;
+        console.log('Successfully retrieved price:', { productAmount, priceId: product.priceId });
       } catch (error) {
-        console.warn('Failed to retrieve Stripe price, using fallback pricing');
+        console.error('Failed to retrieve Stripe price, using fallback pricing:', error);
         useFallbackPricing = true;
         productAmount = product.fallbackPrice;
       }
@@ -197,9 +205,19 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: session.url });
   } catch (error) {
-    console.error('Error creating checkout session:', error);
+    console.error('Error creating checkout session:', {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      purchaseType,
+      discountCode,
+      priceId: product?.priceId,
+      useFallbackPricing
+    });
     return NextResponse.json(
-      { error: 'Failed to create checkout session' },
+      {
+        error: 'Failed to create checkout session',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
