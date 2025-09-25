@@ -65,7 +65,7 @@ This message was sent automatically from the Printed Edges help system.
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Printed Edges Help <help@printededges.com>',
+        from: 'Printed Edges Help <hello@rachgrahamreads.com>',
         to: ['hello@rachgrahamreads.com'],
         reply_to: email,
         subject: emailSubject,
