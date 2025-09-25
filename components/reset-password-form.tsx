@@ -32,29 +32,26 @@ export function ResetPasswordForm({
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    // Check if we have the proper recovery tokens from the URL
-    const token = searchParams.get('token');
-    const type = searchParams.get('type');
+    // Check if we have the recovery code from the URL
+    const code = searchParams.get('code');
 
-    if (!token || type !== 'recovery') {
+    if (!code) {
       setError('Invalid or expired reset link. Please request a new password reset.');
       return;
     }
 
-    // Initialize the session with the recovery token
+    // Exchange the code for a session
     const initializeSession = async () => {
       try {
         const supabase = createClient();
-        const { error } = await supabase.auth.verifyOtp({
-          token_hash: token,
-          type: 'recovery',
-        });
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
 
         if (error) {
+          console.error('Error exchanging code for session:', error);
           setError('Invalid or expired reset link. Please request a new password reset.');
         }
       } catch (error) {
-        console.error('Error verifying recovery token:', error);
+        console.error('Error initializing session:', error);
         setError('Invalid or expired reset link. Please request a new password reset.');
       }
     };
