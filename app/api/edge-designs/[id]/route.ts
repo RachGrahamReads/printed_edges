@@ -8,6 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -17,9 +18,6 @@ export async function GET(
         { status: 401 }
       );
     }
-
-    // Await params as required by Next.js 15
-    const { id } = await params;
 
     console.log('Fetching design with ID:', id, 'for user:', user.id);
 
