@@ -20,14 +20,14 @@ export function HowToGuide({ className }: HowToGuideProps) {
       number: 1,
       title: "Upload your completed PDF",
       content: "Make sure your book is fully formatted and proofread before uploading.",
-      image: "/help/upload_pdf",
+      image: "/help/upload_pdf.png",
       icon: <Download className="h-4 w-4" />
     },
     {
       number: 2,
       title: "If your document already has bleed, select \"My document already has bleed\". Otherwise, leave blank.",
       content: "",
-      image: "/help/bleed_button",
+      image: "/help/bleed_button.png",
       infoTip: "bleed",
       icon: <Info className="h-4 w-4" />
     },
@@ -35,7 +35,7 @@ export function HowToGuide({ className }: HowToGuideProps) {
       number: 3,
       title: "Create your side edge image based on the specified size",
       content: "",
-      image: "/help/image_size",
+      image: "/help/image_size.png",
       infoTip: "create-image",
       icon: <ImageIcon className="h-4 w-4" />
     },
@@ -43,14 +43,14 @@ export function HowToGuide({ className }: HowToGuideProps) {
       number: 4,
       title: "Upload your side edge image",
       content: "",
-      image: "/help/upload_image",
+      image: "/help/upload_image.png",
       icon: <Download className="h-4 w-4" />
     },
     {
       number: 5,
       title: "Choose top & bottom edge colours (optional)",
       content: "",
-      image: "/help/select_colours",
+      image: "/help/select_colours.png",
       infoTip: "colors",
       icon: <Eye className="h-4 w-4" />
     },
@@ -58,7 +58,7 @@ export function HowToGuide({ className }: HowToGuideProps) {
       number: 6,
       title: "Select your edge image scaling mode",
       content: "",
-      image: "/help/edge_scaling",
+      image: "/help/edge_scaling.png",
       infoTip: "scaling",
       icon: <RefreshCw className="h-4 w-4" />
     },
@@ -66,7 +66,7 @@ export function HowToGuide({ className }: HowToGuideProps) {
       number: 7,
       title: "Click \"Preview Design\"",
       content: "",
-      image: "/help/preview_design",
+      image: "/help/preview_design.png",
       icon: <Eye className="h-4 w-4" />
     },
     {
@@ -80,14 +80,14 @@ export function HowToGuide({ className }: HowToGuideProps) {
       number: 9,
       title: "Process your PDF",
       content: "Click \"Process PDF.\" Larger books may take a few minutes.",
-      image: "/help/preview_design",
+      image: "/help/preview_design.png",
       icon: <RefreshCw className="h-4 w-4" />
     },
     {
       number: 10,
       title: "Download your finished PDF",
       content: "It's ready to upload to Amazon KDP! Remember to select \"My document has bleed\" when uploading to KDP.",
-      image: "/help/download_pdf",
+      image: "/help/download_pdf.png",
       infoTip: "kdp",
       icon: <Download className="h-4 w-4" />
     },
@@ -129,7 +129,7 @@ If you have white background in your uploaded edge image, these will be printed 
 
 Examples:
 PDF with existing background, showing both transparent and non-transparent backgrounds on edge design images:`,
-      images: ["/help/transparent", "/help/nontransparent"],
+      images: ["/help/transparent.png", "/help/nontransparent.png"],
       imageLabels: ["Transparent background (recommended)", "Non-transparent background (overrides existing images)"]
     },
     colors: {
@@ -155,7 +155,7 @@ However, if you are intentionally using an off-size image, you may find the foll
     kdp: {
       title: "Printing with bleed on KDP",
       content: `When uploading your document to KDP, you need to select "Bleed (PDF only)" under "Print Options" on the second page (just above where you upload your manuscript). Your trim size remains whatever your original trim size was (e.g. 5 x 8 in).`,
-      image: "/help/kdp_bleed"
+      image: "/help/kdp_bleed.png"
     }
   };
 
