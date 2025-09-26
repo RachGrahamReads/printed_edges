@@ -67,7 +67,7 @@ export default async function Home() {
               <>
                 <Link href="/create">
                   <Button size="lg" className="text-lg px-8 py-3">
-                    Try It Free
+                    Try It Now
                   </Button>
                 </Link>
                 <Link href="/pricing">
@@ -358,7 +358,7 @@ export default async function Home() {
               ) : (
                 <div className="flex gap-4 justify-center">
                   <Link href="/create">
-                    <Button size="lg">Try It Free</Button>
+                    <Button size="lg">Try It Now</Button>
                   </Link>
                   <Link href="/pricing">
                     <Button variant="outline" size="lg">View Pricing</Button>
