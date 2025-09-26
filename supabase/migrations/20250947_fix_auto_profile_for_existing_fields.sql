@@ -35,7 +35,7 @@ BEGIN
 
   -- Create initial credits record for the user
   INSERT INTO public.user_credits (user_id, total_credits, used_credits, created_at)
-  VALUES (NEW.id, 5, 0, NEW.created_at); -- Give new users 5 free credits
+  VALUES (NEW.id, 0, 0, NEW.created_at); -- New users start with 0 credits
 
   RETURN NEW;
 EXCEPTION
