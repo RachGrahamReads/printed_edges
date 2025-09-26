@@ -3,6 +3,11 @@ import { stripe, PRODUCTS } from '@/lib/stripe';
 import { createClient } from '@/lib/supabase/server';
 
 export async function POST(req: NextRequest) {
+  let purchaseType: string | undefined;
+  let discountCode: string | undefined;
+  let product: any;
+  let useFallbackPricing = false;
+
   try {
     const supabase = await createClient();
 
@@ -15,7 +20,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { purchaseType, discountCode } = await req.json();
+    const requestData = await req.json();
+    purchaseType = requestData.purchaseType;
+    discountCode = requestData.discountCode;
 
     // Validate purchase type
     if (!['single_image', 'three_images'].includes(purchaseType)) {
@@ -25,11 +32,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const product = purchaseType === 'single_image' ? PRODUCTS.SINGLE_IMAGE : PRODUCTS.THREE_IMAGES;
+    product = purchaseType === 'single_image' ? PRODUCTS.SINGLE_IMAGE : PRODUCTS.THREE_IMAGES;
 
     // Get price details from Stripe or use fallback
     let productAmount = 0;
-    let useFallbackPricing = false;
 
     console.log('Product config:', {
       purchaseType,
