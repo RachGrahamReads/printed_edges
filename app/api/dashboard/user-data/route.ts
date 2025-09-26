@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     // Since the user is authenticated, RLS should allow access to their own data
     const { data: userProfile, error: userProfileError } = await supabase
       .from('users')
-      .select('first_name, surname, name, email')
+      .select('first_name, last_name, name, email')
       .eq('id', user.id)
       .single();
 
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
               id: user.id,
               email: userProfile?.email || user.email,
               first_name: userProfile?.first_name || user.user_metadata?.first_name,
-              surname: userProfile?.surname || user.user_metadata?.surname,
+              last_name: userProfile?.last_name || user.user_metadata?.surname,
               name: userProfile?.name || user.user_metadata?.full_name,
               created_at: user.created_at
             },
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
         id: user.id,
         email: userProfile?.email || user.email,
         first_name: userProfile?.first_name || user.user_metadata?.first_name,
-        surname: userProfile?.surname || user.user_metadata?.surname,
+        last_name: userProfile?.last_name || user.user_metadata?.surname,
         name: userProfile?.name || user.user_metadata?.full_name,
         created_at: user.created_at
       },

@@ -178,6 +178,17 @@ export default async function Home() {
           </Card>
         </div>
 
+        {/* Demo Video */}
+        <div className="mb-16">
+          <div className="max-w-4xl mx-auto">
+            <img
+              src="/printed_edges_interior"
+              alt="Printed edges interior demonstration"
+              className="w-full rounded-lg shadow-2xl border-4 border-white"
+            />
+          </div>
+        </div>
+
         {/* How It Works */}
         <div className="text-center mb-16">
           <h2 className="text-3xl font-bold mb-8">How It Works</h2>
@@ -216,6 +227,37 @@ export default async function Home() {
               <h3 className="font-medium mb-2">Download & Print</h3>
               <p className="text-sm text-muted-foreground">
                 Get print-ready PDFs with stunning custom edges
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Before & After Section */}
+        <div className="text-center mb-16">
+          <h2 className="text-3xl font-bold mb-8">Transform Your Books</h2>
+          <div className="flex flex-col md:flex-row items-center justify-center gap-8 mb-6">
+            <div className="text-center">
+              <h3 className="text-lg font-semibold mb-4">Turn this:</h3>
+              <img
+                src="/side_image"
+                alt="Original side view"
+                className="rounded-lg shadow-lg border-2 border-gray-200 max-w-sm"
+              />
+            </div>
+            <div className="text-center">
+              <h3 className="text-lg font-semibold mb-4">Into this:</h3>
+              <img
+                src="/edge_side"
+                alt="Enhanced edge side view"
+                className="rounded-lg shadow-lg border-2 border-gray-200 max-w-sm"
+              />
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-medium text-blue-600 mb-2">At the click of a button!</p>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 max-w-2xl mx-auto">
+              <p className="text-green-800 font-medium">
+                📸 Send us a photo of your printed edges, and receive a free credit for your next design!
               </p>
             </div>
           </div>
@@ -330,6 +372,22 @@ export default async function Home() {
         {/* How-to Guide Section */}
         <div className="mb-16">
           <HowToGuideWrapper />
+        </div>
+
+        {/* Final Demo Video */}
+        <div className="mb-16">
+          <div className="max-w-3xl mx-auto">
+            <video
+              className="w-full rounded-lg shadow-2xl border-4 border-black"
+              controls
+              muted
+              loop
+              playsInline
+            >
+              <source src="/pages_flip" type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+          </div>
         </div>
 
         <SiteFooter />
