@@ -241,7 +241,7 @@ export default async function Home() {
               <img
                 src="/side_image.png"
                 alt="Original side view"
-                className="rounded-lg shadow-lg border-2 border-gray-200 max-w-sm"
+                className="rounded-lg shadow-lg border-2 border-gray-200 max-w-sm max-h-[400px] object-contain"
               />
             </div>
             <div className="text-center">
@@ -249,7 +249,7 @@ export default async function Home() {
               <img
                 src="/edge_side.png"
                 alt="Enhanced edge side view"
-                className="rounded-lg shadow-lg border-2 border-gray-200 max-w-sm"
+                className="rounded-lg shadow-lg border-2 border-gray-200 max-w-sm max-h-[400px] object-contain"
               />
             </div>
           </div>
