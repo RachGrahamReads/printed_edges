@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { createAndStoreDesignSlices, createAndStoreDesignMaskedSlices } from '@/lib/edge-slicer';
 
 // Helper function to create a solid color PNG image
 async function createSolidColorImage(hexColor: string, width: number = 100, height: number = 100): Promise<Buffer> {
@@ -184,6 +185,116 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Create and store slices for regeneration
+    console.log('Save-with-PDF-data API: Creating and storing slices for regeneration');
+    let sliceStoragePaths = null;
+
+    try {
+      // Prepare edge images for slicing (convert from stored paths to base64)
+      const edgeImagesForSlicing: any = {};
+
+      if (finalSideImagePath) {
+        // Download the stored side image and convert to base64
+        const { data: sideData, error: sideDownloadError } = await serviceSupabase.storage
+          .from('edge-images')
+          .download(finalSideImagePath);
+
+        if (sideDownloadError) {
+          console.error('Failed to download side image for slicing:', sideDownloadError);
+        } else {
+          const sideBuffer = Buffer.from(await sideData.arrayBuffer());
+          edgeImagesForSlicing.side = { base64: sideBuffer.toString('base64') };
+        }
+      }
+
+      if (finalTopImagePath) {
+        if (topEdgeColor) {
+          // It's a color value
+          edgeImagesForSlicing.top = { color: topEdgeColor };
+        } else {
+          // It's an image file
+          const { data: topData, error: topDownloadError } = await serviceSupabase.storage
+            .from('edge-images')
+            .download(finalTopImagePath);
+
+          if (topDownloadError) {
+            console.error('Failed to download top image for slicing:', topDownloadError);
+          } else {
+            const topBuffer = Buffer.from(await topData.arrayBuffer());
+            edgeImagesForSlicing.top = { base64: topBuffer.toString('base64') };
+          }
+        }
+      }
+
+      if (finalBottomImagePath) {
+        if (bottomEdgeColor) {
+          // It's a color value
+          edgeImagesForSlicing.bottom = { color: bottomEdgeColor };
+        } else {
+          // It's an image file
+          const { data: bottomData, error: bottomDownloadError } = await serviceSupabase.storage
+            .from('edge-images')
+            .download(finalBottomImagePath);
+
+          if (bottomDownloadError) {
+            console.error('Failed to download bottom image for slicing:', bottomDownloadError);
+          } else {
+            const bottomBuffer = Buffer.from(await bottomData.arrayBuffer());
+            edgeImagesForSlicing.bottom = { base64: bottomBuffer.toString('base64') };
+          }
+        }
+      }
+
+      // Calculate PDF dimensions
+      const BLEED_INCHES = 0.125;
+      const POINTS_PER_INCH = 72;
+      const BLEED_POINTS = BLEED_INCHES * POINTS_PER_INCH;
+
+      const trimWidthPoints = (pdfWidth || 6) * POINTS_PER_INCH;
+      const trimHeightPoints = (pdfHeight || 9) * POINTS_PER_INCH;
+
+      let finalPdfWidth = trimWidthPoints;
+      let finalPdfHeight = trimHeightPoints;
+
+      if (bleedType === 'add_bleed') {
+        finalPdfWidth = trimWidthPoints + BLEED_POINTS;
+        finalPdfHeight = trimHeightPoints + (2 * BLEED_POINTS);
+      }
+
+      // Create slices with design-specific paths
+      const rawSlicesPaths = await createAndStoreDesignSlices(edgeImagesForSlicing, {
+        numPages: pageCount || 1,
+        pageType: 'standard',
+        edgeType: edgeType || 'side-only',
+        trimWidth: pdfWidth || 6,
+        trimHeight: pdfHeight || 9,
+        scaleMode: 'fill',
+        pdfDimensions: { width: finalPdfWidth, height: finalPdfHeight }
+      }, designId, user.id);
+
+      console.log(`Created raw slices - Side: ${rawSlicesPaths.side?.raw.length || 0}, Top: ${rawSlicesPaths.top?.raw.length || 0}, Bottom: ${rawSlicesPaths.bottom?.raw.length || 0}`);
+
+      // Create masked slices
+      const maskedSlicesPaths = await createAndStoreDesignMaskedSlices(rawSlicesPaths, {
+        numPages: pageCount || 1,
+        pageType: 'standard',
+        edgeType: edgeType || 'side-only',
+        trimWidth: pdfWidth || 6,
+        trimHeight: pdfHeight || 9,
+        scaleMode: 'fill',
+        pdfDimensions: { width: finalPdfWidth, height: finalPdfHeight }
+      }, designId, user.id);
+
+      console.log(`Created masked slices - Side: ${maskedSlicesPaths.side?.masked.length || 0}, Top: ${maskedSlicesPaths.top?.masked.length || 0}, Bottom: ${maskedSlicesPaths.bottom?.masked.length || 0}`);
+
+      sliceStoragePaths = maskedSlicesPaths;
+
+    } catch (slicingError) {
+      console.error('Failed to create slices for design:', slicingError);
+      // Don't fail the entire operation if slicing fails
+      // The design will still work for initial processing, just not for fast regeneration
+    }
+
     // Insert the edge design with PDF data using the specific design ID
     console.log('Save-with-PDF-data API: Inserting design to database', {
       designId,
@@ -201,7 +312,7 @@ export async function POST(req: NextRequest) {
       edgeType
     });
 
-    // Now that columns have been added, save all the PDF data
+    // Now that columns have been added, save all the PDF data including slice paths
     const insertData = {
       id: designId, // Use the same ID used for image paths
       user_id: user.id,
@@ -216,6 +327,7 @@ export async function POST(req: NextRequest) {
       page_count: pageCount,
       bleed_type: bleedType,
       edge_type: edgeType,
+      slice_storage_paths: sliceStoragePaths, // Store slice paths for fast regeneration
       is_active: true
     };
 

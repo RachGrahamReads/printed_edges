@@ -6,10 +6,11 @@ import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, CreditCard, FileImage, History, LogOut } from "lucide-react";
+import { Plus, CreditCard, FileImage, History, LogOut, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { HelpButton } from "@/components/help-button";
+import { DeleteDesignModal } from "@/components/delete-design-modal";
 
 interface UserCredits {
   total_credits: number;
@@ -68,6 +69,9 @@ export function DashboardContent({ user }: DashboardContentProps) {
   const [renamingDesignId, setRenamingDesignId] = useState<string | null>(null);
   const [newDesignName, setNewDesignName] = useState<string>("");
   const [edgeImageUrls, setEdgeImageUrls] = useState<Record<string, string>>({});
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [designToDelete, setDesignToDelete] = useState<EdgeDesign | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -336,6 +340,43 @@ export function DashboardContent({ user }: DashboardContentProps) {
       console.error('Error renaming design:', error);
       alert('Failed to rename design. Please try again.');
     }
+  };
+
+  const handleDeleteClick = (design: EdgeDesign) => {
+    setDesignToDelete(design);
+    setDeleteModalOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!designToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/edge-designs/${designToDelete.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        // Remove the design from the local state
+        setEdgeDesigns(prev => prev.filter(design => design.id !== designToDelete.id));
+        console.log(`Design "${designToDelete.name}" deleted successfully`);
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to delete design: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error deleting design:', error);
+      alert('Failed to delete design. Please try again.');
+    } finally {
+      setIsDeleting(false);
+      setDeleteModalOpen(false);
+      setDesignToDelete(null);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModalOpen(false);
+    setDesignToDelete(null);
   };
 
   const availableCredits = credits ? credits.total_credits - credits.used_credits : 0;
@@ -654,12 +695,21 @@ export function DashboardContent({ user }: DashboardContentProps) {
                           )}
                         </div>
 
-                        <div className="pt-1">
+                        <div className="pt-1 space-y-1">
                           <Link href={`/regenerate/${design.id}`}>
                             <Button size="sm" className="w-full h-7 text-xs">
                               Use Design
                             </Button>
                           </Link>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDeleteClick(design)}
+                            className="w-full h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Delete
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -701,6 +751,15 @@ export function DashboardContent({ user }: DashboardContentProps) {
           </CardContent>
         </Card>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteDesignModal
+        isOpen={deleteModalOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        designName={designToDelete?.name || ''}
+        isDeleting={isDeleting}
+      />
     </div>
   );
 }

@@ -63,8 +63,7 @@ export async function POST(req: NextRequest) {
     const pdfBuffer = Buffer.from(await pdfFile.arrayBuffer());
     const pdfBase64 = pdfBuffer.toString('base64');
 
-    // Get edge images as base64 from storage
-    const edgeImages: any = {};
+    // Check if we have stored slices for fast regeneration
     console.log('Full design data:', JSON.stringify(design, null, 2));
     console.log('Design data summary:', {
       id: design.id,
@@ -73,98 +72,46 @@ export async function POST(req: NextRequest) {
       topImagePath: design.top_image_path,
       bottomImagePath: design.bottom_image_path,
       edgeType: design.edge_type,
+      hasStoredSlices: !!design.slice_storage_paths,
       createdAt: design.created_at
     });
 
-    if (design.side_image_path) {
-      try {
-        const { data: sideImageData, error: sideError } = await serviceSupabase.storage
-          .from('edge-images')
-          .download(design.side_image_path);
+    let sliceStoragePaths = null;
 
-        if (sideError) {
-          console.error('Error downloading side image:', sideError);
-        } else if (sideImageData) {
-          const sideBuffer = Buffer.from(await sideImageData.arrayBuffer());
-          edgeImages.side = { base64: sideBuffer.toString('base64') };
-          console.log('Side image loaded successfully');
-        }
-      } catch (error) {
-        console.error('Side image download failed:', error);
-      }
+    if (design.slice_storage_paths) {
+      console.log('Found stored slices for fast regeneration');
+      sliceStoragePaths = design.slice_storage_paths;
+    } else {
+      console.log('No stored slices found - this design was created before slice storage was implemented');
+      return NextResponse.json(
+        { error: 'This design cannot be regenerated. Please create a new design to enable fast regeneration.' },
+        { status: 400 }
+      );
     }
 
-    if (design.top_image_path) {
-      try {
-        const { data: topImageData, error: topError } = await serviceSupabase.storage
-          .from('edge-images')
-          .download(design.top_image_path);
-
-        if (topError) {
-          console.error('Error downloading top image:', topError);
-        } else if (topImageData) {
-          const topBuffer = Buffer.from(await topImageData.arrayBuffer());
-          edgeImages.top = { base64: topBuffer.toString('base64') };
-          console.log('Top image loaded successfully');
-        }
-      } catch (error) {
-        console.error('Top image download failed:', error);
-      }
-    }
-
-    if (design.bottom_image_path) {
-      try {
-        const { data: bottomImageData, error: bottomError } = await serviceSupabase.storage
-          .from('edge-images')
-          .download(design.bottom_image_path);
-
-        if (bottomError) {
-          console.error('Error downloading bottom image:', bottomError);
-        } else if (bottomImageData) {
-          const bottomBuffer = Buffer.from(await bottomImageData.arrayBuffer());
-          edgeImages.bottom = { base64: bottomBuffer.toString('base64') };
-          console.log('Bottom image loaded successfully');
-        }
-      } catch (error) {
-        console.error('Bottom image download failed:', error);
-      }
-    }
-
-    console.log('Edge images prepared:', {
-      hasSide: !!edgeImages.side,
-      hasTop: !!edgeImages.top,
-      hasBottom: !!edgeImages.bottom
-    });
-
-    // Determine the appropriate edge type based on available images
+    // Determine the appropriate edge type based on stored slices
     let effectiveEdgeType = design.edge_type || 'side-only';
-    if (effectiveEdgeType === 'all-edges') {
-      // If all-edges is requested but we don't have all images, fall back to side-only
-      if (!edgeImages.top || !edgeImages.bottom) {
-        console.log('Falling back to side-only processing due to missing top/bottom images');
-        effectiveEdgeType = 'side-only';
-      }
-    }
 
-    // Check if we have the minimum required images
-    if (effectiveEdgeType === 'side-only' && !edgeImages.side) {
-      throw new Error('Side edge image could not be loaded. Please make sure the original edge design is still available.');
+    // Validate that we have the required slices for the edge type
+    if (effectiveEdgeType === 'side-only' && !sliceStoragePaths.side?.masked) {
+      throw new Error('Side edge slices not found. This design may be corrupted.');
     }
-    if (effectiveEdgeType === 'all-edges' && (!edgeImages.side || !edgeImages.top || !edgeImages.bottom)) {
-      throw new Error('Side, top, and bottom edge images are required for all-edges processing');
+    if (effectiveEdgeType === 'all-edges' && (!sliceStoragePaths.side?.masked || !sliceStoragePaths.top?.masked || !sliceStoragePaths.bottom?.masked)) {
+      throw new Error('All-edges slices not found. This design may be corrupted.');
     }
 
     console.log(`Processing with edge type: ${effectiveEdgeType}`);
 
     try {
       const numPages = design.page_count || 1;
+      console.log(`Using stored slices for fast regeneration - Side: ${sliceStoragePaths.side?.masked?.length || 0}, Top: ${sliceStoragePaths.top?.masked?.length || 0}, Bottom: ${sliceStoragePaths.bottom?.masked?.length || 0}`);
 
       // Use chunked processing for large PDFs (>20 pages), simple processing for smaller ones
       if (numPages > 20) {
         console.log(`Large PDF detected (${numPages} pages), using chunked processing`);
 
         // Upload PDF to storage for chunked processing
-        const sessionId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const sessionId = `regenerate_${designId}_${Date.now()}`;
         const pdfPath = `${sessionId}/original.pdf`;
 
         const { error: uploadError } = await serviceSupabase.storage
@@ -178,7 +125,7 @@ export async function POST(req: NextRequest) {
           throw new Error(`Failed to upload PDF: ${uploadError.message}`);
         }
 
-        // Use the process-pdf-chunked function
+        // Use the process-pdf-chunked function with stored slices
         const processResult = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-pdf-chunked`, {
           method: 'POST',
           headers: {
@@ -188,7 +135,7 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             sessionId,
             pdfPath,
-            edgeImages: edgeImages,
+            sliceStoragePaths: sliceStoragePaths, // Use the stored slices for fast regeneration
             numPages: numPages,
             pageType: 'standard',
             bleedType: design.bleed_type || 'add_bleed',
@@ -236,7 +183,7 @@ export async function POST(req: NextRequest) {
       } else {
         console.log(`Small PDF (${numPages} pages), using simple processing`);
 
-        // Use the simple process-pdf function with base64 data
+        // Use the simple process-pdf function with base64 data and stored slices
         const processResult = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-pdf`, {
           method: 'POST',
           headers: {
@@ -245,7 +192,7 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({
             pdfBase64: pdfBase64,
-            edgeImages: edgeImages,
+            sliceStoragePaths: sliceStoragePaths, // Use the stored slices for fast regeneration
             numPages: numPages,
             pageType: 'standard', // Use standard as default
             bleedType: design.bleed_type || 'add_bleed',

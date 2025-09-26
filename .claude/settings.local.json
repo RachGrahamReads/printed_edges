@@ -41,7 +41,8 @@
       "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions deploy process-pdf-chunk)",
       "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions logs process-pdf-chunked --limit 20)",
       "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions list)",
-      "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions deploy merge-pdf-chunks)"
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions deploy merge-pdf-chunks)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []

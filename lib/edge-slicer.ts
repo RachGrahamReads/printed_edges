@@ -478,6 +478,254 @@ export async function scaleEdgeImageToBookDimensions(
 }
 
 // NEW: Two-stage processing with Supabase storage integration
+// NEW: Create and store slices permanently for a design (for regeneration)
+export async function createAndStoreDesignSlices(
+  edgeImages: {
+    side?: { base64: string };
+    top?: { base64: string } | { color: string };
+    bottom?: { base64: string } | { color: string };
+  },
+  options: EdgeSlicingOptions,
+  designId: string,
+  userId: string
+): Promise<SliceStoragePaths> {
+  if (!supabase) {
+    throw new Error('Supabase client not initialized');
+  }
+
+  // Use design-based paths for permanent storage
+  const designBasePath = `users/${userId}/designs/${designId}`;
+
+  // Create raw slices
+  const rawSlices = await createRawSlices(edgeImages, options);
+
+  // Upload raw slices with design-based paths
+  const storagePaths: SliceStoragePaths = {};
+
+  if (rawSlices.side) {
+    storagePaths.side = { raw: [], masked: [] };
+    console.log(`Storing ${rawSlices.side.length} raw side slices for design ${designId}...`);
+
+    const uploadPromises = rawSlices.side.map(async (slice, i) => {
+      const path = `${designBasePath}/slices/raw/side_${i}.png`;
+      const bytes = base64ToUint8Array(slice);
+
+      const { error } = await supabase.storage
+        .from('edge-images')
+        .upload(path, bytes, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (error) throw new Error(`Failed to store side slice ${i}: ${error.message}`);
+      return { index: i, path };
+    });
+
+    const results = await Promise.all(uploadPromises);
+    results.sort((a, b) => a.index - b.index);
+    storagePaths.side.raw = results.map(r => r.path);
+    console.log(`✓ Stored ${results.length} raw side slices`);
+  }
+
+  if (rawSlices.top) {
+    storagePaths.top = { raw: [], masked: [] };
+    console.log(`Storing ${rawSlices.top.length} raw top slices for design ${designId}...`);
+
+    const uploadPromises = rawSlices.top.map(async (slice, i) => {
+      const path = `${designBasePath}/slices/raw/top_${i}.png`;
+      const bytes = base64ToUint8Array(slice);
+
+      const { error } = await supabase.storage
+        .from('edge-images')
+        .upload(path, bytes, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (error) throw new Error(`Failed to store top slice ${i}: ${error.message}`);
+      return { index: i, path };
+    });
+
+    const results = await Promise.all(uploadPromises);
+    results.sort((a, b) => a.index - b.index);
+    storagePaths.top.raw = results.map(r => r.path);
+    console.log(`✓ Stored ${results.length} raw top slices`);
+  }
+
+  if (rawSlices.bottom) {
+    storagePaths.bottom = { raw: [], masked: [] };
+    console.log(`Storing ${rawSlices.bottom.length} raw bottom slices for design ${designId}...`);
+
+    const uploadPromises = rawSlices.bottom.map(async (slice, i) => {
+      const path = `${designBasePath}/slices/raw/bottom_${i}.png`;
+      const bytes = base64ToUint8Array(slice);
+
+      const { error } = await supabase.storage
+        .from('edge-images')
+        .upload(path, bytes, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (error) throw new Error(`Failed to store bottom slice ${i}: ${error.message}`);
+      return { index: i, path };
+    });
+
+    const results = await Promise.all(uploadPromises);
+    results.sort((a, b) => a.index - b.index);
+    storagePaths.bottom.raw = results.map(r => r.path);
+    console.log(`✓ Stored ${results.length} raw bottom slices`);
+  }
+
+  console.log(`Raw slices stored for design ${designId}:`, {
+    side: storagePaths.side?.raw.length || 0,
+    top: storagePaths.top?.raw.length || 0,
+    bottom: storagePaths.bottom?.raw.length || 0
+  });
+
+  return storagePaths;
+}
+
+// NEW: Create and store masked slices permanently for a design
+export async function createAndStoreDesignMaskedSlices(
+  rawSlicesPaths: SliceStoragePaths,
+  options: EdgeSlicingOptions,
+  designId: string,
+  userId: string
+): Promise<SliceStoragePaths> {
+  if (!supabase) {
+    throw new Error('Supabase client not initialized');
+  }
+
+  const designBasePath = `users/${userId}/designs/${designId}`;
+
+  // Apply triangle masks to the raw slices
+  const maskedSlicesPaths: SliceStoragePaths = JSON.parse(JSON.stringify(rawSlicesPaths)); // Deep copy
+
+  // Process side slices if they exist
+  if (rawSlicesPaths.side?.raw) {
+    maskedSlicesPaths.side!.masked = [];
+    console.log(`Creating masked side slices for design ${designId}...`);
+
+    const maskPromises = rawSlicesPaths.side.raw.map(async (rawPath, i) => {
+      // Download the raw slice
+      const { data: rawSliceData, error: downloadError } = await supabase.storage
+        .from('edge-images')
+        .download(rawPath);
+
+      if (downloadError) throw new Error(`Failed to download raw side slice ${i}: ${downloadError.message}`);
+
+      // Convert to base64
+      const buffer = await rawSliceData.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const base64 = btoa(String.fromCharCode(...bytes));
+
+      // Apply triangle mask
+      const maskedBase64 = await applyTriangleMask(base64, 'side', options.pdfDimensions, options.pageType);
+      const maskedBytes = base64ToUint8Array(maskedBase64);
+
+      // Store masked slice
+      const maskedPath = `${designBasePath}/slices/masked/side_${i}.png`;
+      const { error: uploadError } = await supabase.storage
+        .from('edge-images')
+        .upload(maskedPath, maskedBytes, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (uploadError) throw new Error(`Failed to store masked side slice ${i}: ${uploadError.message}`);
+      return { index: i, path: maskedPath };
+    });
+
+    const results = await Promise.all(maskPromises);
+    results.sort((a, b) => a.index - b.index);
+    maskedSlicesPaths.side!.masked = results.map(r => r.path);
+    console.log(`✓ Stored ${results.length} masked side slices`);
+  }
+
+  // Process top slices if they exist
+  if (rawSlicesPaths.top?.raw && options.edgeType === 'all-edges') {
+    maskedSlicesPaths.top!.masked = [];
+    console.log(`Creating masked top slices for design ${designId}...`);
+
+    const maskPromises = rawSlicesPaths.top.raw.map(async (rawPath, i) => {
+      const { data: rawSliceData, error: downloadError } = await supabase.storage
+        .from('edge-images')
+        .download(rawPath);
+
+      if (downloadError) throw new Error(`Failed to download raw top slice ${i}: ${downloadError.message}`);
+
+      const buffer = await rawSliceData.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const base64 = btoa(String.fromCharCode(...bytes));
+
+      const maskedBase64 = await applyTriangleMask(base64, 'top', options.pdfDimensions, options.pageType);
+      const maskedBytes = base64ToUint8Array(maskedBase64);
+
+      const maskedPath = `${designBasePath}/slices/masked/top_${i}.png`;
+      const { error: uploadError } = await supabase.storage
+        .from('edge-images')
+        .upload(maskedPath, maskedBytes, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (uploadError) throw new Error(`Failed to store masked top slice ${i}: ${uploadError.message}`);
+      return { index: i, path: maskedPath };
+    });
+
+    const results = await Promise.all(maskPromises);
+    results.sort((a, b) => a.index - b.index);
+    maskedSlicesPaths.top!.masked = results.map(r => r.path);
+    console.log(`✓ Stored ${results.length} masked top slices`);
+  }
+
+  // Process bottom slices if they exist
+  if (rawSlicesPaths.bottom?.raw && options.edgeType === 'all-edges') {
+    maskedSlicesPaths.bottom!.masked = [];
+    console.log(`Creating masked bottom slices for design ${designId}...`);
+
+    const maskPromises = rawSlicesPaths.bottom.raw.map(async (rawPath, i) => {
+      const { data: rawSliceData, error: downloadError } = await supabase.storage
+        .from('edge-images')
+        .download(rawPath);
+
+      if (downloadError) throw new Error(`Failed to download raw bottom slice ${i}: ${downloadError.message}`);
+
+      const buffer = await rawSliceData.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const base64 = btoa(String.fromCharCode(...bytes));
+
+      const maskedBase64 = await applyTriangleMask(base64, 'bottom', options.pdfDimensions, options.pageType);
+      const maskedBytes = base64ToUint8Array(maskedBase64);
+
+      const maskedPath = `${designBasePath}/slices/masked/bottom_${i}.png`;
+      const { error: uploadError } = await supabase.storage
+        .from('edge-images')
+        .upload(maskedPath, maskedBytes, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (uploadError) throw new Error(`Failed to store masked bottom slice ${i}: ${uploadError.message}`);
+      return { index: i, path: maskedPath };
+    });
+
+    const results = await Promise.all(maskPromises);
+    results.sort((a, b) => a.index - b.index);
+    maskedSlicesPaths.bottom!.masked = results.map(r => r.path);
+    console.log(`✓ Stored ${results.length} masked bottom slices`);
+  }
+
+  console.log(`Masked slices stored for design ${designId}:`, {
+    side: maskedSlicesPaths.side?.masked.length || 0,
+    top: maskedSlicesPaths.top?.masked.length || 0,
+    bottom: maskedSlicesPaths.bottom?.masked.length || 0
+  });
+
+  return maskedSlicesPaths;
+}
+
 export async function createAndStoreRawSlices(
   edgeImages: {
     side?: { base64: string };

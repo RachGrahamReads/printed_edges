@@ -112,23 +112,74 @@ export async function DELETE(
       );
     }
 
-    // Await params as required by Next.js 15
     const { id } = await params;
-
     const serviceSupabase = createServiceRoleClient();
+
+    // First, get the design to check ownership and get slice paths for cleanup
+    const { data: design, error: fetchError } = await serviceSupabase
+      .from('edge_designs')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .single();
+
+    if (fetchError || !design) {
+      return NextResponse.json(
+        { error: 'Design not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    console.log(`Deleting design: ${design.name} (ID: ${id}) for user: ${user.id}`);
+
+    // Clean up stored slice files from storage if they exist
+    if (design.slice_storage_paths) {
+      console.log('Cleaning up stored slice files...');
+      try {
+        const slicePaths = design.slice_storage_paths;
+        const filesToDelete: string[] = [];
+
+        // Collect all slice file paths
+        if (slicePaths.side?.raw) filesToDelete.push(...slicePaths.side.raw);
+        if (slicePaths.side?.masked) filesToDelete.push(...slicePaths.side.masked);
+        if (slicePaths.top?.raw) filesToDelete.push(...slicePaths.top.raw);
+        if (slicePaths.top?.masked) filesToDelete.push(...slicePaths.top.masked);
+        if (slicePaths.bottom?.raw) filesToDelete.push(...slicePaths.bottom.raw);
+        if (slicePaths.bottom?.masked) filesToDelete.push(...slicePaths.bottom.masked);
+
+        if (filesToDelete.length > 0) {
+          console.log(`Deleting ${filesToDelete.length} slice files from storage`);
+          const { error: storageError } = await serviceSupabase.storage
+            .from('edge-images')
+            .remove(filesToDelete);
+
+          if (storageError) {
+            console.error('Error cleaning up slice files:', storageError);
+            // Don't fail the delete operation if slice cleanup fails
+          } else {
+            console.log('Successfully cleaned up slice files');
+          }
+        }
+      } catch (cleanupError) {
+        console.error('Error during slice cleanup:', cleanupError);
+        // Continue with the design deletion even if cleanup fails
+      }
+    }
 
     // Soft delete by setting is_active to false
     const { error: deleteError } = await serviceSupabase
       .from('edge_designs')
       .update({ is_active: false })
       .eq('id', id)
-      .eq('user_id', user.id); // Ensure user can only delete their own designs
+      .eq('user_id', user.id);
 
     if (deleteError) {
       throw deleteError;
     }
 
-    return NextResponse.json({ success: true });
+    console.log(`Successfully deleted design: ${design.name}`);
+    return NextResponse.json({ success: true, message: 'Design deleted successfully' });
 
   } catch (error) {
     console.error('Edge design deletion error:', error);
