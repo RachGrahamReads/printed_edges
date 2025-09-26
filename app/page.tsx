@@ -182,7 +182,7 @@ export default async function Home() {
         <div className="mb-16">
           <div className="max-w-4xl mx-auto">
             <img
-              src="/help/printed_edges_interior.png"
+              src="/printed_edges_interior.png"
               alt="Printed edges interior demonstration"
               className="w-full rounded-lg shadow-2xl border-4 border-white"
             />
@@ -239,7 +239,7 @@ export default async function Home() {
             <div className="text-center">
               <h3 className="text-lg font-semibold mb-4">Turn this:</h3>
               <img
-                src="/help/side_image.png"
+                src="/side_image.png"
                 alt="Original side view"
                 className="rounded-lg shadow-lg border-2 border-gray-200 max-w-sm"
               />
@@ -247,7 +247,7 @@ export default async function Home() {
             <div className="text-center">
               <h3 className="text-lg font-semibold mb-4">Into this:</h3>
               <img
-                src="/help/edge_side.png"
+                src="/edge_side.png"
                 alt="Enhanced edge side view"
                 className="rounded-lg shadow-lg border-2 border-gray-200 max-w-sm"
               />
@@ -384,7 +384,7 @@ export default async function Home() {
               loop
               playsInline
             >
-              <source src="/help/pages_flip.MP4" type="video/mp4" />
+              <source src="/pages_flip.MP4" type="video/mp4" />
               Your browser does not support the video tag.
             </video>
           </div>
