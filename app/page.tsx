@@ -23,9 +23,6 @@ export default async function Home() {
               <Link href={"/"}>Printed Edges</Link>
             </div>
             <div className="flex gap-4 items-center">
-              <Link href="/create">
-                <Button variant="ghost" size="sm">Try Free</Button>
-              </Link>
               <Link href="/pricing">
                 <Button variant="ghost" size="sm">Pricing</Button>
               </Link>

@@ -148,7 +148,7 @@ However, if you are intentionally using an off-size image, you may find the foll
 
 • None: Uses your image at original size with no scaling - best for images already sized correctly.
 
-• Stretch: Uses your entire image but may distort proportions to fit the exact dimensions needed. ⚠️ Best for abstract patterns or gradients where distortion won't be noticeable.
+• Stretch: Uses your entire image but may distort proportions to fit the exact dimensions needed. Best for abstract patterns or gradients where distortion won't be noticeable.
 
 • Extend Sides: Centres your image and extends the edge pixels to fill any gaps. Good for solid colours or simple gradients.`
     },
@@ -252,7 +252,6 @@ However, if you are intentionally using an off-size image, you may find the foll
 
               <div className="flex-1 space-y-2">
                 <h3 className="font-medium flex items-center gap-2">
-                  {step.icon}
                   {step.title}
                   {step.infoTip && (
                     <Button

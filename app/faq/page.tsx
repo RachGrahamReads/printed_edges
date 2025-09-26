@@ -47,6 +47,15 @@ export default function FAQPage() {
         {
           q: "Will Amazon always print my edges perfectly?",
           a: "Amazon usually does a great job, but sometimes trimming can be a little uneven. That's why we highly recommend ordering a proof copy first — and get to see your design in real life before going live!"
+        },
+        {
+          q: "What will the printed edges look like?",
+          a: "The print-on-demand edges print onto the page itself, so that it's visible from the outside edge when the book is closed. This means that the images extend into the book, and will be seen as lines in the margins of your book (depending on your design). Here's an example:",
+          image: "/help/printed_edges_interior.png"
+        },
+        {
+          q: "Do the edge images have to extend so far into the page margins?",
+          a: "We have printed into the \"safety zone\" described by Amazon, to make sure that they don't trim off the entire edge image during trimming. We may revisit this and offer narrower margin printing later, with enough proof that Amazon won't cut too far in the printing process, but for now, we're playing it safe with this printed edge margin zone."
         }
       ]
     },
@@ -67,7 +76,7 @@ export default function FAQPage() {
         },
         {
           q: "What file type do I need?",
-          a: "We need your book in PDF format. Make sure it's the final, formatted interior, as your edges will be designed to suit this PDF size and number of pages."
+          a: "We need your book in PDF format. Make sure it's the final, formatted interior, as your edges will be designed to suit this PDF size and number of pages. The edge image should be in JPG or PNG format (PNG if you have a transparent background - see \"Why use a transparent background?\" in the help guide)."
         }
       ]
     },
@@ -176,6 +185,15 @@ export default function FAQPage() {
                           <p className="text-gray-700 leading-relaxed">
                             {faq.a}
                           </p>
+                          {faq.image && (
+                            <div className="mt-4">
+                              <img
+                                src={faq.image}
+                                alt={faq.q}
+                                className="rounded border max-w-full h-auto"
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
