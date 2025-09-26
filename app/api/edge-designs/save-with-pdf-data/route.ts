@@ -285,12 +285,26 @@ export async function POST(req: NextRequest) {
         pdfDimensions: { width: finalPdfWidth, height: finalPdfHeight }
       }, designId, user.id);
 
-      console.log(`Created masked slices - Side: ${maskedSlicesPaths.side?.masked.length || 0}, Top: ${maskedSlicesPaths.top?.masked.length || 0}, Bottom: ${maskedSlicesPaths.bottom?.masked.length || 0}`);
+      console.log(`✅ Created masked slices - Side: ${maskedSlicesPaths.side?.masked.length || 0}, Top: ${maskedSlicesPaths.top?.masked.length || 0}, Bottom: ${maskedSlicesPaths.bottom?.masked.length || 0}`);
 
       sliceStoragePaths = maskedSlicesPaths;
+      console.log('✅ Slice storage paths ready for database insert:', {
+        hasSlicePaths: !!sliceStoragePaths,
+        hasSliceData: !!(sliceStoragePaths && Object.keys(sliceStoragePaths).length > 0)
+      });
 
     } catch (slicingError) {
-      console.error('Failed to create slices for design:', slicingError);
+      console.error('❌ Failed to create slices for design:', slicingError);
+      console.error('Slicing error stack:', slicingError instanceof Error ? slicingError.stack : slicingError);
+      console.error('Error details:', {
+        designId,
+        userId: user.id,
+        hasEdgeImages: {
+          side: !!edgeImagesForSlicing.side,
+          top: !!edgeImagesForSlicing.top,
+          bottom: !!edgeImagesForSlicing.bottom
+        }
+      });
       // Don't fail the entire operation if slicing fails
       // The design will still work for initial processing, just not for fast regeneration
     }
