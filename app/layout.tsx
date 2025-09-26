@@ -3,19 +3,19 @@ import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
-const defaultUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
+const defaultUrl = process.env.NODE_ENV === 'production'
+  ? "https://printed-edges.rachgrahamreads.com"
   : "http://localhost:3000";
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "Printed Edges - Add Gilded Edges to Your PDFs",
-  description: "Transform your PDFs with beautiful gilded edges. Perfect for print-on-demand books, journals, and professional documents. Upload your PDF and choose from stunning edge designs.",
-  keywords: ["PDF", "gilded edges", "print on demand", "book design", "PDF processing", "edge effects"],
+  title: "Printed Edges - Create Stunning Custom Edges for Your Books",
+  description: "Upload your PDF and custom edge designs to create professional print-on-demand books with beautiful decorative edges. Perfect for novels, journals, and special publications.",
+  keywords: ["PDF", "custom edges", "print on demand", "book design", "PDF processing", "edge effects", "decorative edges"],
   authors: [{ name: "Printed Edges" }],
   openGraph: {
-    title: "Printed Edges - Add Gilded Edges to Your PDFs",
-    description: "Transform your PDFs with beautiful gilded edges. Perfect for print-on-demand books, journals, and professional documents.",
+    title: "Printed Edges - Create Stunning Custom Edges for Your Books",
+    description: "Upload your PDF and custom edge designs to create professional print-on-demand books with beautiful decorative edges.",
     url: defaultUrl,
     siteName: "Printed Edges",
     type: "website",
@@ -30,8 +30,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Printed Edges - Add Gilded Edges to Your PDFs",
-    description: "Transform your PDFs with beautiful gilded edges. Perfect for print-on-demand books.",
+    title: "Printed Edges - Create Stunning Custom Edges for Your Books",
+    description: "Upload your PDF and custom edge designs to create professional print-on-demand books with beautiful decorative edges.",
     images: ["/opengraph-image.png"]
   }
 };
