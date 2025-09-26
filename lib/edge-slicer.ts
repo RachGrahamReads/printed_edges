@@ -496,8 +496,84 @@ export async function createAndStoreDesignSlices(
   // Use design-based paths for permanent storage
   const designBasePath = `users/${userId}/designs/${designId}`;
 
-  // Create raw slices
-  const rawSlices = await createRawSlices(edgeImages, options);
+  // Calculate target dimensions for each edge type
+  const numLeaves = Math.ceil(options.numPages / 2);
+
+  // Pre-scale images to book dimensions before slicing (same as createAndStoreRawSlices)
+  const scaledEdgeImages: {
+    side?: { base64: string };
+    top?: { base64: string };
+    bottom?: { base64: string };
+  } = {};
+
+  if (edgeImages.side && options.pdfDimensions) {
+    const targetHeight = pointsToCanvasPixels(options.pdfDimensions.height, options.pageType);
+    const targetWidth = numLeaves; // 1 pixel per leaf for slicing
+
+    console.log(`Scaling side edge image to: ${targetWidth} × ${targetHeight}`);
+    scaledEdgeImages.side = {
+      base64: await scaleEdgeImageToBookDimensions(
+        edgeImages.side.base64,
+        { width: targetWidth, height: targetHeight },
+        options.scaleMode || 'fill'
+      )
+    };
+  }
+
+  if (edgeImages.top && options.pdfDimensions) {
+    if ('color' in edgeImages.top) {
+      // It's a color - create a solid color image
+      const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
+      const targetHeight = numLeaves; // 1 pixel per leaf for slicing
+
+      console.log(`Creating top edge color slice: ${targetWidth} × ${targetHeight}, color: ${edgeImages.top.color}`);
+      scaledEdgeImages.top = {
+        base64: await createColorImage(targetWidth, targetHeight, edgeImages.top.color)
+      };
+    } else {
+      // It's an image - scale normally
+      const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
+      const targetHeight = numLeaves; // 1 pixel per leaf for slicing
+
+      console.log(`Scaling top edge image to: ${targetWidth} × ${targetHeight}`);
+      scaledEdgeImages.top = {
+        base64: await scaleEdgeImageToBookDimensions(
+          edgeImages.top.base64,
+          { width: targetWidth, height: targetHeight },
+          options.scaleMode || 'fill'
+        )
+      };
+    }
+  }
+
+  if (edgeImages.bottom && options.pdfDimensions) {
+    if ('color' in edgeImages.bottom) {
+      // It's a color - create a solid color image
+      const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
+      const targetHeight = numLeaves; // 1 pixel per leaf for slicing
+
+      console.log(`Creating bottom edge color slice: ${targetWidth} × ${targetHeight}, color: ${edgeImages.bottom.color}`);
+      scaledEdgeImages.bottom = {
+        base64: await createColorImage(targetWidth, targetHeight, edgeImages.bottom.color)
+      };
+    } else {
+      // It's an image - scale normally
+      const targetWidth = pointsToCanvasPixels(options.pdfDimensions.width, options.pageType);
+      const targetHeight = numLeaves; // 1 pixel per leaf for slicing
+
+      console.log(`Scaling bottom edge image to: ${targetWidth} × ${targetHeight}`);
+      scaledEdgeImages.bottom = {
+        base64: await scaleEdgeImageToBookDimensions(
+          edgeImages.bottom.base64,
+          { width: targetWidth, height: targetHeight },
+          options.scaleMode || 'fill'
+        )
+      };
+    }
+  }
+
+  // Create raw slices from pre-scaled images (no scale mode needed now)
+  const rawSlices = await createRawSlicesFromScaledImages(scaledEdgeImages, options);
 
   // Upload raw slices with design-based paths
   const storagePaths: SliceStoragePaths = {};
