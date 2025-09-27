@@ -92,18 +92,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Get edge designs count
+    // Get edge designs with regeneration counts
     const { data: designsData } = await supabase
       .from('edge_designs')
-      .select('id')
+      .select('id, regeneration_count')
       .eq('user_id', user.id)
       .eq('is_active', true);
 
-    // Get processing jobs count
-    const { data: jobsData } = await supabase
-      .from('processing_jobs')
-      .select('id')
-      .eq('user_id', user.id);
+    // Count total PDFs processed (including regenerations)
+    // Each edge design represents a processed PDF, plus count regenerations
+    const totalPdfsProcessed = (designsData?.length || 0) +
+      (designsData?.reduce((sum, design) => sum + (design.regeneration_count || 0), 0) || 0);
 
     // Get recent purchases
     const { data: purchasesData } = await supabase
@@ -125,7 +124,7 @@ export async function GET(req: NextRequest) {
       },
       stats: {
         edgeDesigns: designsData?.length || 0,
-        processingJobs: jobsData?.length || 0,
+        processingJobs: totalPdfsProcessed,
         recentPurchases: purchasesData || []
       }
     };
