@@ -61,7 +61,7 @@ export function DashboardContent({ user }: DashboardContentProps) {
   const [credits, setCredits] = useState<UserCredits | null>(null);
   const [apiUserData, setApiUserData] = useState<ApiUserData | null>(null);
   const [edgeDesigns, setEdgeDesigns] = useState<EdgeDesign[]>([]);
-  const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([]);
+  const [processingJobsCount, setProcessingJobsCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
@@ -235,12 +235,12 @@ export function DashboardContent({ user }: DashboardContentProps) {
         console.log('User data set:', data.user);
       }
 
-      // Set processing jobs data
-      if (data.processingJobs) {
-        setProcessingJobs(data.processingJobs);
-        console.log('Processing jobs set:', data.processingJobs);
+      // Set processing jobs count from stats
+      if (data.stats && typeof data.stats.processingJobs === 'number') {
+        setProcessingJobsCount(data.stats.processingJobs);
+        console.log('Processing jobs count set:', data.stats.processingJobs);
       } else {
-        console.warn('No processing jobs data in response');
+        console.warn('No processing jobs count in response stats');
       }
 
       // Load edge designs via API
@@ -416,7 +416,7 @@ export function DashboardContent({ user }: DashboardContentProps) {
             <History className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{processingJobs.length}</div>
+            <div className="text-2xl font-bold">{processingJobsCount}</div>
             <p className="text-xs text-muted-foreground">
               Total processing jobs completed
             </p>
@@ -672,36 +672,6 @@ export function DashboardContent({ user }: DashboardContentProps) {
         </CardContent>
       </Card>
 
-      {/* Recent Processing Jobs */}
-      {processingJobs.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Processing Jobs</CardTitle>
-            <CardDescription>
-              Your latest PDF processing activities
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {processingJobs.map((job) => (
-                <div key={job.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                  <div>
-                    <p className="font-medium">
-                      Processing Job #{job.id.slice(-8)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {new Date(job.created_at).toLocaleDateString()} • {job.page_count || 'Unknown'} pages
-                    </p>
-                  </div>
-                  <Badge variant={job.status === 'completed' ? 'default' : job.status === 'failed' ? 'destructive' : 'secondary'}>
-                    {job.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
     </div>
   );
