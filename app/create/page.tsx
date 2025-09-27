@@ -877,7 +877,7 @@ export default function CreatePage() {
     });
   };
 
-  const autoSaveDesignWithPdfData = async () => {
+  const autoSaveDesignWithPdfData = async (designId?: string, sliceStoragePaths?: any) => {
     if (!user) {
       return;
     }
@@ -925,7 +925,9 @@ export default function CreatePage() {
         pdfHeight: bookHeight,
         pageCount: totalPages,
         bleedType: bleedType,
-        edgeType: 'all-edges' // Always all-edges for now
+        edgeType: 'all-edges', // Always all-edges for now
+        designId: designId, // Use provided designId to match slice paths
+        sliceStoragePaths: sliceStoragePaths // Pre-computed slice paths from processing
       };
 
       console.log('Auto-saving design with data:', {
@@ -1030,6 +1032,9 @@ export default function CreatePage() {
 
       setProcessingStep('Processing PDF...');
 
+      // Generate designId for slice storage (if user is authenticated)
+      const designId = user ? crypto.randomUUID() : undefined;
+
       // Use chunking workflow for all PDFs (now with storage-based slicing)
       const result = await processPDFWithChunking(
         pdfFile,
@@ -1043,14 +1048,26 @@ export default function CreatePage() {
           trimHeight: bookHeight,
           scaleMode: 'fill' // Default scale mode
         },
+        designId,
+        user?.id,
         (progress) => setProcessingProgress(progress)
       );
 
       setProcessingStep('Complete!');
       setProcessingProgress(100);
 
-      // Convert the result to a data URL for download
-      const blob = new Blob([result], { type: 'application/pdf' });
+      // Handle new return format - extract PDF buffer and slice paths
+      const pdfBuffer = typeof result === 'object' && 'pdfBuffer' in result ? result.pdfBuffer : result;
+      const sliceStoragePaths = typeof result === 'object' && 'sliceStoragePaths' in result ? result.sliceStoragePaths : null;
+
+      console.log('Processing result:', {
+        hasPdfBuffer: !!pdfBuffer,
+        hasSlicePaths: !!sliceStoragePaths,
+        designId
+      });
+
+      // Convert the PDF buffer to a data URL for download
+      const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       setProcessedPdfUrl(url);
 
@@ -1081,7 +1098,7 @@ export default function CreatePage() {
 
       // Auto-save the design after successful processing
       if (user) {
-        autoSaveDesignWithPdfData();
+        autoSaveDesignWithPdfData(designId, sliceStoragePaths);
       }
 
       // Show success message

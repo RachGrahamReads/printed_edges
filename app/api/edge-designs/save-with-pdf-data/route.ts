@@ -62,7 +62,9 @@ export async function POST(req: NextRequest) {
       pdfHeight,
       pageCount,
       bleedType,
-      edgeType
+      edgeType,
+      designId,
+      sliceStoragePaths
     } = requestData;
 
     if (!name) {
@@ -82,12 +84,14 @@ export async function POST(req: NextRequest) {
     console.log('Save-with-PDF-data API: Creating service client and paths');
 
     const serviceSupabase = createServiceRoleClient();
-    const designId = crypto.randomUUID();
-    const basePath = `users/${user.id}/designs/${designId}`;
+    const finalDesignId = designId || crypto.randomUUID();
+    const basePath = `users/${user.id}/designs/${finalDesignId}`;
 
-    console.log('Save-with-PDF-data API: Generated paths', {
-      designId,
-      basePath
+    console.log('Save-with-PDF-data API: Using design paths', {
+      designId: finalDesignId,
+      providedDesignId: !!designId,
+      basePath,
+      hasSlicePaths: !!sliceStoragePaths
     });
 
     // Upload edge images to user-specific storage
@@ -185,13 +189,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Create and store slices for regeneration
-    console.log('Save-with-PDF-data API: Creating and storing slices for regeneration');
-    let sliceStoragePaths = null;
+    // Handle slice storage paths - use provided or create new
+    console.log('Save-with-PDF-data API: Handling slice storage paths');
+    let finalSliceStoragePaths = sliceStoragePaths || null;
 
-    try {
-      // Prepare edge images for slicing (convert from stored paths to base64)
-      const edgeImagesForSlicing: any = {};
+    // Only create slices if not provided from processing
+    if (!sliceStoragePaths) {
+      console.log('No slice paths provided, creating slices for regeneration...');
+
+      try {
+        // Prepare edge images for slicing (convert from stored paths to base64)
+        const edgeImagesForSlicing: any = {};
 
       if (finalSideImagePath) {
         // Download the stored side image and convert to base64
@@ -287,31 +295,34 @@ export async function POST(req: NextRequest) {
 
       console.log(`✅ Created masked slices - Side: ${maskedSlicesPaths.side?.masked.length || 0}, Top: ${maskedSlicesPaths.top?.masked.length || 0}, Bottom: ${maskedSlicesPaths.bottom?.masked.length || 0}`);
 
-      sliceStoragePaths = maskedSlicesPaths;
-      console.log('✅ Slice storage paths ready for database insert:', {
-        hasSlicePaths: !!sliceStoragePaths,
-        hasSliceData: !!(sliceStoragePaths && Object.keys(sliceStoragePaths).length > 0)
-      });
+        finalSliceStoragePaths = maskedSlicesPaths;
+        console.log('✅ Slice storage paths created for database insert:', {
+          hasSlicePaths: !!finalSliceStoragePaths,
+          hasSliceData: !!(finalSliceStoragePaths && Object.keys(finalSliceStoragePaths).length > 0)
+        });
 
-    } catch (slicingError) {
-      console.error('❌ Failed to create slices for design:', slicingError);
-      console.error('Slicing error stack:', slicingError instanceof Error ? slicingError.stack : slicingError);
-      console.error('Error details:', {
-        designId,
-        userId: user.id,
-        hasEdgeImages: {
-          side: !!edgeImagesForSlicing.side,
-          top: !!edgeImagesForSlicing.top,
-          bottom: !!edgeImagesForSlicing.bottom
-        }
-      });
-      // Don't fail the entire operation if slicing fails
-      // The design will still work for initial processing, just not for fast regeneration
+      } catch (slicingError) {
+        console.error('❌ Failed to create slices for design:', slicingError);
+        console.error('Slicing error stack:', slicingError instanceof Error ? slicingError.stack : slicingError);
+        console.error('Error details:', {
+          designId: finalDesignId,
+          userId: user.id,
+          hasEdgeImages: {
+            side: !!edgeImagesForSlicing.side,
+            top: !!edgeImagesForSlicing.top,
+            bottom: !!edgeImagesForSlicing.bottom
+          }
+        });
+        // Don't fail the entire operation if slicing fails
+        // The design will still work for initial processing, just not for fast regeneration
+      }
+    } else {
+      console.log('✅ Using provided slice storage paths from processing');
     }
 
     // Insert the edge design with PDF data using the specific design ID
     console.log('Save-with-PDF-data API: Inserting design to database', {
-      designId,
+      designId: finalDesignId,
       userId: user.id,
       name: name.trim(),
       hasSideImage: !!finalSideImagePath,
@@ -328,7 +339,7 @@ export async function POST(req: NextRequest) {
 
     // Now that columns have been added, save all the PDF data including slice paths
     const insertData = {
-      id: designId, // Use the same ID used for image paths
+      id: finalDesignId, // Use the final design ID (provided or generated)
       user_id: user.id,
       name: name.trim(),
       side_image_path: finalSideImagePath,
@@ -341,7 +352,7 @@ export async function POST(req: NextRequest) {
       page_count: pageCount,
       bleed_type: bleedType,
       edge_type: edgeType,
-      slice_storage_paths: sliceStoragePaths, // Store slice paths for fast regeneration
+      slice_storage_paths: finalSliceStoragePaths, // Store final slice paths for fast regeneration
       is_active: true
     };
 

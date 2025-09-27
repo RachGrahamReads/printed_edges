@@ -266,7 +266,7 @@ export default async function Home() {
         {/* Pricing Section */}
         <div className="text-center mb-16" id="pricing">
           <h2 className="text-3xl font-bold mb-8">Simple, Transparent Pricing</h2>
-          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto mb-8">
             <Card>
               <CardHeader className="text-center">
                 <CardTitle className="text-2xl">Single Image</CardTitle>
@@ -333,6 +333,26 @@ export default async function Home() {
                 <Link href="/pricing">
                   <Button className="w-full">Get Started</Button>
                 </Link>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Bulk Pricing Contact */}
+          <div className="max-w-2xl mx-auto">
+            <Card className="border-2 border-dashed border-gray-300">
+              <CardHeader className="text-center">
+                <CardTitle className="text-xl">Large Backlist? Publisher?</CardTitle>
+                <CardDescription>Contact us for bulk pricing!</CardDescription>
+              </CardHeader>
+              <CardContent className="text-center">
+                <p className="text-muted-foreground mb-4">
+                  Need more than 10 designs? We offer special pricing for publishers and large projects.
+                </p>
+                <Button variant="outline" className="w-full" asChild>
+                  <a href="mailto:hello@rachgrahamreads.com?subject=Bulk Pricing Inquiry">
+                    Contact Us for Bulk Pricing
+                  </a>
+                </Button>
               </CardContent>
             </Card>
           </div>

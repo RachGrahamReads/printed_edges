@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { createAndStoreRawSlices, createAndStoreMaskedSlices } from './edge-slicer';
+import { createAndStoreRawSlices, createAndStoreMaskedSlices, createAndStoreDesignSlices, createAndStoreDesignMaskedSlices } from './edge-slicer';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -26,6 +26,8 @@ export async function processPDFWithChunking(
     trimHeight: number;
     scaleMode?: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides';
   },
+  designId?: string,
+  userId?: string,
   onProgress?: (progress: number) => void
 ) {
   if (!supabase) {
@@ -34,6 +36,9 @@ export async function processPDFWithChunking(
 
   try {
     const sessionId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const useDesignPaths = designId && userId;
+
+    console.log(`Using ${useDesignPaths ? 'design-based' : 'session-based'} slice storage paths`);
 
     // First, convert edge data to the format needed for slicing
     const edgeImages: any = {};
@@ -87,30 +92,56 @@ export async function processPDFWithChunking(
     console.log('Creating and storing raw slices...');
 
     // STAGE 1: Create raw slices and store them
-    const rawSlicesPaths = await createAndStoreRawSlices(edgeImages, {
-      numPages: options.numPages,
-      pageType: options.pageType as 'bw' | 'standard' | 'premium',
-      edgeType: options.edgeType,
-      trimWidth: options.trimWidth,
-      trimHeight: options.trimHeight,
-      scaleMode: options.scaleMode,
-      pdfDimensions: { width: pdfWidth, height: pdfHeight }
-    }, sessionId);
+    let rawSlicesPaths;
+    if (useDesignPaths) {
+      rawSlicesPaths = await createAndStoreDesignSlices(edgeImages, {
+        numPages: options.numPages,
+        pageType: options.pageType as 'bw' | 'standard' | 'premium',
+        edgeType: options.edgeType,
+        trimWidth: options.trimWidth,
+        trimHeight: options.trimHeight,
+        scaleMode: options.scaleMode,
+        pdfDimensions: { width: pdfWidth, height: pdfHeight }
+      }, designId!, userId!);
+    } else {
+      rawSlicesPaths = await createAndStoreRawSlices(edgeImages, {
+        numPages: options.numPages,
+        pageType: options.pageType as 'bw' | 'standard' | 'premium',
+        edgeType: options.edgeType,
+        trimWidth: options.trimWidth,
+        trimHeight: options.trimHeight,
+        scaleMode: options.scaleMode,
+        pdfDimensions: { width: pdfWidth, height: pdfHeight }
+      }, sessionId);
+    }
 
     console.log(`Created raw slices - Side: ${rawSlicesPaths.side?.raw.length || 0}, Top: ${rawSlicesPaths.top?.raw.length || 0}, Bottom: ${rawSlicesPaths.bottom?.raw.length || 0}`);
 
     console.log('Creating and storing masked slices...');
 
     // STAGE 2: Apply triangle masks and store masked versions
-    const maskedSlicesPaths = await createAndStoreMaskedSlices(rawSlicesPaths, {
-      numPages: options.numPages,
-      pageType: options.pageType as 'bw' | 'standard' | 'premium',
-      edgeType: options.edgeType,
-      trimWidth: options.trimWidth,
-      trimHeight: options.trimHeight,
-      scaleMode: options.scaleMode,
-      pdfDimensions: { width: pdfWidth, height: pdfHeight }
-    }, sessionId);
+    let maskedSlicesPaths;
+    if (useDesignPaths) {
+      maskedSlicesPaths = await createAndStoreDesignMaskedSlices(rawSlicesPaths, {
+        numPages: options.numPages,
+        pageType: options.pageType as 'bw' | 'standard' | 'premium',
+        edgeType: options.edgeType,
+        trimWidth: options.trimWidth,
+        trimHeight: options.trimHeight,
+        scaleMode: options.scaleMode,
+        pdfDimensions: { width: pdfWidth, height: pdfHeight }
+      }, designId!, userId!);
+    } else {
+      maskedSlicesPaths = await createAndStoreMaskedSlices(rawSlicesPaths, {
+        numPages: options.numPages,
+        pageType: options.pageType as 'bw' | 'standard' | 'premium',
+        edgeType: options.edgeType,
+        trimWidth: options.trimWidth,
+        trimHeight: options.trimHeight,
+        scaleMode: options.scaleMode,
+        pdfDimensions: { width: pdfWidth, height: pdfHeight }
+      }, sessionId);
+    }
 
     console.log(`Created masked slices - Side: ${maskedSlicesPaths.side?.masked.length || 0}, Top: ${maskedSlicesPaths.top?.masked.length || 0}, Bottom: ${maskedSlicesPaths.bottom?.masked.length || 0}`);
 
@@ -325,7 +356,17 @@ export async function processPDFWithChunking(
 
     if (downloadError) throw downloadError;
 
-    return await finalPdf.arrayBuffer();
+    const pdfBuffer = await finalPdf.arrayBuffer();
+
+    // Return PDF buffer and slice paths (when using design-based paths)
+    if (useDesignPaths) {
+      return {
+        pdfBuffer,
+        sliceStoragePaths: maskedSlicesPaths
+      };
+    } else {
+      return pdfBuffer;
+    }
 
   } catch (error) {
     console.error('Error processing PDF with chunking:', error);

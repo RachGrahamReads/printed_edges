@@ -314,6 +314,26 @@ export default function PricingPage() {
         ))}
       </div>
 
+      {/* Bulk Pricing Contact */}
+      <div className="mt-12 max-w-2xl mx-auto">
+        <Card className="border-2 border-dashed border-gray-300">
+          <CardHeader className="text-center">
+            <CardTitle className="text-xl">Large Backlist? Publisher?</CardTitle>
+            <CardDescription>Contact us for bulk pricing!</CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-muted-foreground mb-4">
+              Need more than 10 designs? We offer special pricing for publishers and large projects.
+            </p>
+            <Button variant="outline" className="w-full" asChild>
+              <a href="mailto:hello@rachgrahamreads.com?subject=Bulk Pricing Inquiry">
+                Contact Us for Bulk Pricing
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="mt-12 text-center text-sm text-muted-foreground max-w-2xl mx-auto">
         <h3 className="font-medium mb-2">How it works:</h3>
         <p>
