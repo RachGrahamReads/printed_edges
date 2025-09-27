@@ -151,19 +151,31 @@ export async function DELETE(
     console.log(`Deleting design: ${design.name} (ID: ${id}) for user: ${user.id}`);
 
     // Clean up stored slice files from storage if they exist
-    if (design.slice_storage_paths) {
+    if (design.slice_storage_paths && typeof design.slice_storage_paths === 'object') {
       console.log('Cleaning up stored slice files...');
       try {
         const slicePaths = design.slice_storage_paths;
         const filesToDelete: string[] = [];
 
-        // Collect all slice file paths
-        if (slicePaths.side?.raw) filesToDelete.push(...slicePaths.side.raw);
-        if (slicePaths.side?.masked) filesToDelete.push(...slicePaths.side.masked);
-        if (slicePaths.top?.raw) filesToDelete.push(...slicePaths.top.raw);
-        if (slicePaths.top?.masked) filesToDelete.push(...slicePaths.top.masked);
-        if (slicePaths.bottom?.raw) filesToDelete.push(...slicePaths.bottom.raw);
-        if (slicePaths.bottom?.masked) filesToDelete.push(...slicePaths.bottom.masked);
+        // Safely collect all slice file paths with null checks
+        if (slicePaths.side?.raw && Array.isArray(slicePaths.side.raw)) {
+          filesToDelete.push(...slicePaths.side.raw);
+        }
+        if (slicePaths.side?.masked && Array.isArray(slicePaths.side.masked)) {
+          filesToDelete.push(...slicePaths.side.masked);
+        }
+        if (slicePaths.top?.raw && Array.isArray(slicePaths.top.raw)) {
+          filesToDelete.push(...slicePaths.top.raw);
+        }
+        if (slicePaths.top?.masked && Array.isArray(slicePaths.top.masked)) {
+          filesToDelete.push(...slicePaths.top.masked);
+        }
+        if (slicePaths.bottom?.raw && Array.isArray(slicePaths.bottom.raw)) {
+          filesToDelete.push(...slicePaths.bottom.raw);
+        }
+        if (slicePaths.bottom?.masked && Array.isArray(slicePaths.bottom.masked)) {
+          filesToDelete.push(...slicePaths.bottom.masked);
+        }
 
         if (filesToDelete.length > 0) {
           console.log(`Deleting ${filesToDelete.length} slice files from storage`);
@@ -182,6 +194,31 @@ export async function DELETE(
         console.error('Error during slice cleanup:', cleanupError);
         // Continue with the design deletion even if cleanup fails
       }
+    }
+
+    // Also clean up the main design images
+    try {
+      const imagesToDelete: string[] = [];
+      if (design.side_image_path) imagesToDelete.push(design.side_image_path);
+      if (design.top_image_path) imagesToDelete.push(design.top_image_path);
+      if (design.bottom_image_path) imagesToDelete.push(design.bottom_image_path);
+
+      if (imagesToDelete.length > 0) {
+        console.log(`Deleting ${imagesToDelete.length} main design images from storage`);
+        const { error: mainImagesError } = await serviceSupabase.storage
+          .from('edge-images')
+          .remove(imagesToDelete);
+
+        if (mainImagesError) {
+          console.error('Error cleaning up main images:', mainImagesError);
+          // Don't fail the delete operation if image cleanup fails
+        } else {
+          console.log('Successfully cleaned up main design images');
+        }
+      }
+    } catch (imageCleanupError) {
+      console.error('Error during main image cleanup:', imageCleanupError);
+      // Continue with the design deletion even if cleanup fails
     }
 
     // Soft delete by setting is_active to false
