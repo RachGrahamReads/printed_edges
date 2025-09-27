@@ -4,7 +4,7 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role';
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const supabase = await createClient();
@@ -26,8 +26,9 @@ export async function PUT(
       );
     }
 
-    // Await params as required by Next.js 15
-    const { id } = await params;
+    // Handle both async and sync params for Next.js compatibility
+    const params = context.params;
+    const { id } = params instanceof Promise ? await params : params;
 
     const serviceSupabase = createServiceRoleClient();
 

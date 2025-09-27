@@ -7,10 +7,12 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role';
 // GET: Fetch a specific edge design
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const { id } = await params;
+    // Handle both async and sync params for Next.js compatibility
+    const params = context.params;
+    const { id } = params instanceof Promise ? await params : params;
     console.log('=== EDGE DESIGNS API DEBUG ===');
     console.log('Requested design ID:', id);
 
@@ -116,7 +118,7 @@ export async function GET(
 // DELETE: Remove edge design
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const supabase = await createClient();
@@ -129,7 +131,9 @@ export async function DELETE(
       );
     }
 
-    const { id } = await params;
+    // Handle both async and sync params for Next.js compatibility
+    const params = context.params;
+    const { id } = params instanceof Promise ? await params : params;
     const serviceSupabase = createServiceRoleClient();
 
     // First, get the design to check ownership and get slice paths for cleanup
