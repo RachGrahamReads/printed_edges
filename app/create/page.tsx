@@ -524,13 +524,15 @@ export default function CreatePage() {
     ctx.fillRect(0, templateHeight - bleedMargin, templateWidth, bleedMargin);
 
     // Draw buffer zones (50% transparent blue)
-    const bufferTop = bleedType === "add_bleed" ? bleedMargin : 0;
-    const bufferBottom = bleedType === "add_bleed" ? bleedMargin : 0;
+    // For add_bleed: buffer zones start after the bleed zones
+    // For existing_bleed: buffer zones also start after the bleed zones (not overlapping)
+    const bufferTop = bleedMargin; // Always start after the top bleed zone
+    const bufferBottom = bleedMargin; // Always account for bottom bleed zone
 
     ctx.fillStyle = 'rgba(0, 123, 255, 0.5)';
-    // Top buffer zone
+    // Top buffer zone (starts after the red bleed zone)
     ctx.fillRect(0, bufferTop, templateWidth, bufferMargin);
-    // Bottom buffer zone
+    // Bottom buffer zone (ends before the red bleed zone)
     ctx.fillRect(0, templateHeight - bufferBottom - bufferMargin, templateWidth, bufferMargin);
 
     // Draw main design area (safe zone) border - REMOVED
