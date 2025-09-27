@@ -697,7 +697,7 @@ export async function createAndStoreDesignMaskedSlices(
       const base64 = btoa(String.fromCharCode(...bytes));
 
       // Apply triangle mask
-      const maskedBase64 = await applyTriangleMask(base64, 'side', options.pdfDimensions, options.pageType);
+      const maskedBase64 = await applyTriangleMaskToSlice(base64, 'side');
       const maskedBytes = base64ToUint8Array(maskedBase64);
 
       // Store masked slice
@@ -735,7 +735,7 @@ export async function createAndStoreDesignMaskedSlices(
       const bytes = new Uint8Array(buffer);
       const base64 = btoa(String.fromCharCode(...bytes));
 
-      const maskedBase64 = await applyTriangleMask(base64, 'top', options.pdfDimensions, options.pageType);
+      const maskedBase64 = await applyTriangleMaskToSlice(base64, 'top');
       const maskedBytes = base64ToUint8Array(maskedBase64);
 
       const maskedPath = `${designBasePath}/slices/masked/top_${i}.png`;
@@ -772,7 +772,7 @@ export async function createAndStoreDesignMaskedSlices(
       const bytes = new Uint8Array(buffer);
       const base64 = btoa(String.fromCharCode(...bytes));
 
-      const maskedBase64 = await applyTriangleMask(base64, 'bottom', options.pdfDimensions, options.pageType);
+      const maskedBase64 = await applyTriangleMaskToSlice(base64, 'bottom');
       const maskedBytes = base64ToUint8Array(maskedBase64);
 
       const maskedPath = `${designBasePath}/slices/masked/bottom_${i}.png`;

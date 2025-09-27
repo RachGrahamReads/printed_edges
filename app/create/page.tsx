@@ -1299,7 +1299,7 @@ export default function CreatePage() {
                             <>
                               <input
                                 type="color"
-                                value="#000000"
+                                value={topEdgeColor.startsWith('#') ? topEdgeColor : "#000000"}
                                 onChange={(e) => setTopEdgeColor(e.target.value)}
                                 className="w-8 h-8 border border-gray-300 rounded cursor-pointer"
                                 title="Pick color"
@@ -1311,8 +1311,9 @@ export default function CreatePage() {
                                     const eyeDropper = new (window as any).EyeDropper();
                                     eyeDropper.open().then((result: any) => {
                                       setTopEdgeColor(result.sRGBHex);
-                                    }).catch(() => {
-                                      // Fallback if eyedropper fails
+                                    }).catch((error: any) => {
+                                      // User cancelled or eyedropper failed - don't change state
+                                      console.log('Eyedropper cancelled or failed:', error);
                                     });
                                   }
                                 }}
@@ -1347,7 +1348,7 @@ export default function CreatePage() {
                             <>
                               <input
                                 type="color"
-                                value="#000000"
+                                value={bottomEdgeColor.startsWith('#') ? bottomEdgeColor : "#000000"}
                                 onChange={(e) => setBottomEdgeColor(e.target.value)}
                                 className="w-8 h-8 border border-gray-300 rounded cursor-pointer"
                                 title="Pick color"
@@ -1359,8 +1360,9 @@ export default function CreatePage() {
                                     const eyeDropper = new (window as any).EyeDropper();
                                     eyeDropper.open().then((result: any) => {
                                       setBottomEdgeColor(result.sRGBHex);
-                                    }).catch(() => {
-                                      // Fallback if eyedropper fails
+                                    }).catch((error: any) => {
+                                      // User cancelled or eyedropper failed - don't change state
+                                      console.log('Eyedropper cancelled or failed:', error);
                                     });
                                   }
                                 }}

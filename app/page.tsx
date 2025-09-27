@@ -342,7 +342,6 @@ export default async function Home() {
             <Card className="border-2 border-dashed border-gray-300">
               <CardHeader className="text-center pb-4">
                 <CardTitle className="text-xl">Large Backlist? Publisher?</CardTitle>
-                <CardDescription>Contact us for bulk pricing!</CardDescription>
               </CardHeader>
               <CardContent className="text-center pt-0">
                 <Button variant="outline" className="w-full" asChild>
