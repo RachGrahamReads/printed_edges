@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ThemeSwitcher } from "./theme-switcher";
 
 export function SiteFooter() {
   return (
@@ -14,7 +13,6 @@ export function SiteFooter() {
         <span className="text-muted-foreground">
           © {new Date().getFullYear()} Printed Edges
         </span>
-        <ThemeSwitcher />
       </div>
     </footer>
   );
