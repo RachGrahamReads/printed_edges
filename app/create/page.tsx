@@ -35,6 +35,8 @@ export default function CreatePage() {
   const [bottomEdgeImage, setBottomEdgeImage] = useState<string | null>(null);
   const [topEdgeColor, setTopEdgeColor] = useState<string>("none");
   const [bottomEdgeColor, setBottomEdgeColor] = useState<string>("none");
+  const [topCustomColor, setTopCustomColor] = useState<string>("#000000");
+  const [bottomCustomColor, setBottomCustomColor] = useState<string>("#000000");
   const [showPreview, setShowPreview] = useState(false);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -555,19 +557,11 @@ export default function CreatePage() {
     ctx.font = `${baseFontSize}px Arial, sans-serif`;
     ctx.textAlign = 'center';
 
-    ctx.fillText('Side Edge Template', 0, -lineSpacing * 3);
-    ctx.fillText(`${Math.round(templateWidth)} × ${Math.round(templateHeight)}px`, 0, -lineSpacing * 2);
-    ctx.fillText(`${bookWidth}" × ${bookHeight}" • ${totalPages}p`, 0, -lineSpacing);
+    // Combine all template info into one line to prevent cropping
+    const bleedText = bleedType === "add_bleed" ? " - Bleed (red)" : "";
+    const templateText = `Side Edge Template for ${bookWidth}" × ${bookHeight}" trim; ${Math.round(templateWidth)} × ${Math.round(templateHeight)}px${bleedText} - Buffer (blue)`;
 
-    ctx.font = `${smallFontSize}px Arial, sans-serif`;
-    // ctx.fillStyle = '#28a745';
-    // ctx.fillText('Safe area (green)', 0, lineSpacing * 0.5);
-    if (bleedType === "add_bleed") {
-      ctx.fillStyle = '#dc3545';
-      ctx.fillText('Bleed (red)', 0, lineSpacing * 1.5);
-    }
-    ctx.fillStyle = '#007bff';
-    ctx.fillText('Buffer (blue)', 0, lineSpacing * 2.5);
+    ctx.fillText(templateText, 0, -lineSpacing);
 
     ctx.restore();
 
@@ -909,13 +903,13 @@ export default function CreatePage() {
       if (topEdgeImageFile) {
         edgeFiles.top = await fileToBase64(topEdgeImageFile);
       } else if (topEdgeColor && topEdgeColor !== "none") {
-        edgeFiles.top = topEdgeColor; // Pass color value directly
+        edgeFiles.top = topEdgeColor === "custom" ? topCustomColor : topEdgeColor; // Pass color value directly
       }
 
       if (bottomEdgeImageFile) {
         edgeFiles.bottom = await fileToBase64(bottomEdgeImageFile);
       } else if (bottomEdgeColor && bottomEdgeColor !== "none") {
-        edgeFiles.bottom = bottomEdgeColor; // Pass color value directly
+        edgeFiles.bottom = bottomEdgeColor === "custom" ? bottomCustomColor : bottomEdgeColor; // Pass color value directly
       }
 
       const designData = {
@@ -1022,12 +1016,14 @@ export default function CreatePage() {
 
       // Handle top edge (color only for now)
       if (topEdgeColor !== "none") {
-        edgeData.top = topEdgeColor === "black" ? "#000000" : topEdgeColor;
+        edgeData.top = topEdgeColor === "black" ? "#000000" :
+                      topEdgeColor === "custom" ? topCustomColor : topEdgeColor;
       }
 
       // Handle bottom edge (color only for now)
       if (bottomEdgeColor !== "none") {
-        edgeData.bottom = bottomEdgeColor === "black" ? "#000000" : bottomEdgeColor;
+        edgeData.bottom = bottomEdgeColor === "black" ? "#000000" :
+                         bottomEdgeColor === "custom" ? bottomCustomColor : bottomEdgeColor;
       }
 
       setProcessingStep('Processing PDF...');
@@ -1299,8 +1295,8 @@ export default function CreatePage() {
                             <>
                               <input
                                 type="color"
-                                value={topEdgeColor.startsWith('#') ? topEdgeColor : "#000000"}
-                                onChange={(e) => setTopEdgeColor(e.target.value)}
+                                value={topCustomColor}
+                                onChange={(e) => setTopCustomColor(e.target.value)}
                                 className="w-8 h-8 border border-gray-300 rounded cursor-pointer"
                                 title="Pick color"
                               />
@@ -1310,7 +1306,7 @@ export default function CreatePage() {
                                   if ('EyeDropper' in window) {
                                     const eyeDropper = new (window as any).EyeDropper();
                                     eyeDropper.open().then((result: any) => {
-                                      setTopEdgeColor(result.sRGBHex);
+                                      setTopCustomColor(result.sRGBHex);
                                     }).catch((error: any) => {
                                       // User cancelled or eyedropper failed - don't change state
                                       console.log('Eyedropper cancelled or failed:', error);
@@ -1348,8 +1344,8 @@ export default function CreatePage() {
                             <>
                               <input
                                 type="color"
-                                value={bottomEdgeColor.startsWith('#') ? bottomEdgeColor : "#000000"}
-                                onChange={(e) => setBottomEdgeColor(e.target.value)}
+                                value={bottomCustomColor}
+                                onChange={(e) => setBottomCustomColor(e.target.value)}
                                 className="w-8 h-8 border border-gray-300 rounded cursor-pointer"
                                 title="Pick color"
                               />
@@ -1359,7 +1355,7 @@ export default function CreatePage() {
                                   if ('EyeDropper' in window) {
                                     const eyeDropper = new (window as any).EyeDropper();
                                     eyeDropper.open().then((result: any) => {
-                                      setBottomEdgeColor(result.sRGBHex);
+                                      setBottomCustomColor(result.sRGBHex);
                                     }).catch((error: any) => {
                                       // User cancelled or eyedropper failed - don't change state
                                       console.log('Eyedropper cancelled or failed:', error);
