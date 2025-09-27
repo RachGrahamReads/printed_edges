@@ -501,9 +501,9 @@ export default function CreatePage() {
     const numLeaves = Math.ceil(totalPages / 2);
     const totalThickness = numLeaves * PAPER_THICKNESS_INCHES;
 
-    // Calculate template dimensions
-    const templateWidth = totalThickness * 300; // Width in pixels at 300 DPI
-    const templateHeight = (bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 300; // Height in pixels at 300 DPI
+    // Calculate template dimensions to match actual processing dimensions
+    const templateWidth = numLeaves; // Width in pixels = number of leaves (1px per leaf)
+    const templateHeight = Math.round((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 285.7); // Height in pixels at 285.7 DPI
 
     canvas.width = templateWidth;
     canvas.height = templateHeight;
@@ -512,18 +512,16 @@ export default function CreatePage() {
     ctx.fillStyle = '#f8f9fa';
     ctx.fillRect(0, 0, templateWidth, templateHeight);
 
-    // Calculate zones
-    const bleedMargin = 0.125 * 300; // 0.125" in pixels at 300 DPI
-    const bufferMargin = 0.125 * 300; // Additional 0.125" buffer zone
+    // Calculate zones using the same DPI as template height
+    const bleedMargin = Math.round(0.125 * 285.7); // 0.125" in pixels at 285.7 DPI
+    const bufferMargin = Math.round(0.125 * 285.7); // Additional 0.125" buffer zone
 
-    // Draw bleed zones (50% transparent red) only if we're adding bleed
-    if (bleedType === "add_bleed") {
-      ctx.fillStyle = 'rgba(220, 53, 69, 0.5)';
-      // Top bleed zone
-      ctx.fillRect(0, 0, templateWidth, bleedMargin);
-      // Bottom bleed zone
-      ctx.fillRect(0, templateHeight - bleedMargin, templateWidth, bleedMargin);
-    }
+    // Draw bleed zones (50% transparent red) - show for both add_bleed and existing_bleed
+    ctx.fillStyle = 'rgba(220, 53, 69, 0.5)';
+    // Top bleed zone
+    ctx.fillRect(0, 0, templateWidth, bleedMargin);
+    // Bottom bleed zone
+    ctx.fillRect(0, templateHeight - bleedMargin, templateWidth, bleedMargin);
 
     // Draw buffer zones (50% transparent blue)
     const bufferTop = bleedType === "add_bleed" ? bleedMargin : 0;
@@ -558,8 +556,7 @@ export default function CreatePage() {
     ctx.textAlign = 'center';
 
     // Combine all template info into one line to prevent cropping
-    const bleedText = bleedType === "add_bleed" ? " - Bleed (red)" : "";
-    const templateText = `Side Edge Template for ${bookWidth}" × ${bookHeight}" trim; ${Math.round(templateWidth)} × ${Math.round(templateHeight)}px${bleedText} - Buffer (blue)`;
+    const templateText = `Side Edge Template for ${bookWidth}" × ${bookHeight}" trim; ${Math.round(templateWidth)} × ${Math.round(templateHeight)}px - Bleed (red) - Buffer (blue)`;
 
     ctx.fillText(templateText, 0, -lineSpacing);
 
@@ -2111,11 +2108,13 @@ export default function CreatePage() {
                                   <div
                                     className="w-6 h-6 rounded border border-gray-300"
                                     style={{
-                                      backgroundColor: topEdgeColor === "black" ? "#000000" : topEdgeColor,
+                                      backgroundColor: topEdgeColor === "black" ? "#000000" :
+                                                      topEdgeColor === "custom" ? topCustomColor : topEdgeColor,
                                     }}
                                   />
                                   <span className="text-sm text-gray-600">
-                                    {topEdgeColor === "black" ? "Black" : topEdgeColor}
+                                    {topEdgeColor === "black" ? "Black" :
+                                     topEdgeColor === "custom" ? topCustomColor : topEdgeColor}
                                   </span>
                                 </div>
                               )}
@@ -2125,11 +2124,13 @@ export default function CreatePage() {
                                   <div
                                     className="w-6 h-6 rounded border border-gray-300"
                                     style={{
-                                      backgroundColor: bottomEdgeColor === "black" ? "#000000" : bottomEdgeColor,
+                                      backgroundColor: bottomEdgeColor === "black" ? "#000000" :
+                                                      bottomEdgeColor === "custom" ? bottomCustomColor : bottomEdgeColor,
                                     }}
                                   />
                                   <span className="text-sm text-gray-600">
-                                    {bottomEdgeColor === "black" ? "Black" : bottomEdgeColor}
+                                    {bottomEdgeColor === "black" ? "Black" :
+                                     bottomEdgeColor === "custom" ? bottomCustomColor : bottomEdgeColor}
                                   </span>
                                 </div>
                               )}

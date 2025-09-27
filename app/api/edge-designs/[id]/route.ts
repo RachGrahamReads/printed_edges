@@ -63,22 +63,39 @@ export async function GET(
     });
 
     if (designError || !design) {
+      const debugInfo = {
+        designId: id,
+        userId: user.id,
+        designExists: !!designExists,
+        designOwnerId: designExists?.user_id,
+        isActive: designExists?.is_active,
+        errorCode: designError?.code,
+        errorMessage: designError?.message,
+        timestamp: new Date().toISOString()
+      };
+
       console.error('Design not found with filters:', {
         designId: id,
         userId: user.id,
         error: designError,
-        designExistsData: designExists
+        designExistsData: designExists,
+        fullDebugInfo: debugInfo
       });
+
+      // More detailed error message based on what we found
+      let errorMessage = 'Design not found';
+      if (designExists && designExists.user_id !== user.id) {
+        errorMessage = 'Design belongs to different user';
+      } else if (designExists && !designExists.is_active) {
+        errorMessage = 'Design has been deleted';
+      } else if (!designExists) {
+        errorMessage = 'Design does not exist in database';
+      }
+
       return NextResponse.json(
         {
-          error: 'Design not found or access denied',
-          debug: {
-            designId: id,
-            userId: user.id,
-            designExists: !!designExists,
-            designOwnerId: designExists?.user_id,
-            isActive: designExists?.is_active
-          }
+          error: errorMessage,
+          debug: debugInfo
         },
         { status: 404 }
       );
