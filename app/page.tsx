@@ -354,6 +354,81 @@ export default async function Home() {
           </div>
         </div>
 
+        {/* Custom Designs Section */}
+        <div className="text-center mb-16" id="custom-designs">
+          <h2 className="text-3xl font-bold mb-8">Custom Design Services</h2>
+          <div className="max-w-4xl mx-auto">
+            <Card className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200">
+              <CardHeader className="text-center">
+                <CardTitle className="text-2xl text-amber-900">Done-For-You Edge Designs</CardTitle>
+                <CardDescription className="text-lg text-amber-700">
+                  Custom designs to match your cover, book vibe, or preferences
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="text-center">
+                  <div className="text-4xl font-bold text-amber-900 mb-2">$60</div>
+                  <div className="text-lg text-amber-700">per custom design</div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6 text-left">
+                  <div>
+                    <h4 className="font-semibold text-amber-900 mb-3">Perfect for:</h4>
+                    <ul className="space-y-2 text-amber-700">
+                      <li className="flex items-center">
+                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
+                        Special edition releases
+                      </li>
+                      <li className="flex items-center">
+                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
+                        Multi-book series with cohesive design
+                      </li>
+                      <li className="flex items-center">
+                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
+                        Matching your existing cover aesthetic
+                      </li>
+                      <li className="flex items-center">
+                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
+                        Unique designs for your book's theme
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-amber-900 mb-3">What you get:</h4>
+                    <ul className="space-y-2 text-amber-700">
+                      <li className="flex items-center">
+                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
+                        Professional custom design
+                      </li>
+                      <li className="flex items-center">
+                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
+                        Print-ready files
+                      </li>
+                      <li className="flex items-center">
+                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
+                        Full commercial rights
+                      </li>
+                      <li className="flex items-center">
+                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
+                        Optional formatting services available
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-lg border border-amber-200">
+                  <Button className="w-full bg-amber-600 hover:bg-amber-700" asChild>
+                    <a href="mailto:hello@rachgrahamreads.com?subject=Custom Edge Design Inquiry">
+                      Contact Us for Custom Designs
+                    </a>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
         {/* CTA Section */}
         <div className="text-center mb-8">
           <Card className="max-w-2xl mx-auto bg-gradient-to-r from-blue-50 to-purple-50 border-2">
