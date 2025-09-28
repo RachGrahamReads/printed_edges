@@ -15,7 +15,8 @@ import {
   ArrowLeft,
   CheckCircle,
   AlertCircle,
-  Pipette
+  Pipette,
+  Calculator
 } from "lucide-react";
 import { SiteFooter } from "@/components/site-footer";
 import Link from "next/link";
@@ -1128,6 +1129,12 @@ export default function CreatePage() {
               </Badge>
             )}
             <HowToGuideLink />
+            <Link href="/calculator">
+              <Button variant="ghost" size="sm" className="gap-2">
+                <Calculator className="h-4 w-4" />
+                Size Calculator
+              </Button>
+            </Link>
             <HelpButton />
             <Link href="/pricing">
               <Button variant="ghost" size="sm">Pricing</Button>
