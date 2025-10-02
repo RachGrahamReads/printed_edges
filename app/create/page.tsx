@@ -52,6 +52,7 @@ export default function CreatePage() {
   const [pdfPages, setPdfPages] = useState<string[]>([]);
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
+  const [apiUserData, setApiUserData] = useState<any>(null);
   const [credits, setCredits] = useState<{ total_credits: number; used_credits: number } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showBleedZones, setShowBleedZones] = useState(true);
@@ -86,6 +87,9 @@ export default function CreatePage() {
             const data = await response.json();
             if (data.credits) {
               setCredits(data.credits);
+            }
+            if (data.user) {
+              setApiUserData(data.user);
             }
           }
         } catch (error) {
@@ -1160,7 +1164,7 @@ export default function CreatePage() {
           {user && (
             <div className="mb-2">
               <p className="text-lg font-medium text-gray-700">
-                Hi, {user.user_metadata?.first_name || user.email?.split('@')[0]}!
+                Hi, {apiUserData?.first_name || user.user_metadata?.first_name || user.email?.split('@')[0]}!
               </p>
             </div>
           )}
