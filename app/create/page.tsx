@@ -1024,14 +1024,18 @@ export default function CreatePage() {
       // Handle side edge (always file for now)
       if (sideEdgeImageFile) edgeData.side = sideEdgeImageFile;
 
-      // Handle top edge (color only for now)
-      if (topEdgeColor !== "none") {
+      // Handle top edge - check for image file first, then color
+      if (topEdgeImageFile) {
+        edgeData.top = topEdgeImageFile;
+      } else if (topEdgeColor !== "none") {
         edgeData.top = topEdgeColor === "black" ? "#000000" :
                       topEdgeColor === "custom" ? topCustomColor : topEdgeColor;
       }
 
-      // Handle bottom edge (color only for now)
-      if (bottomEdgeColor !== "none") {
+      // Handle bottom edge - check for image file first, then color
+      if (bottomEdgeImageFile) {
+        edgeData.bottom = bottomEdgeImageFile;
+      } else if (bottomEdgeColor !== "none") {
         edgeData.bottom = bottomEdgeColor === "black" ? "#000000" :
                          bottomEdgeColor === "custom" ? bottomCustomColor : bottomEdgeColor;
       }
@@ -1302,12 +1306,13 @@ export default function CreatePage() {
                             value={topEdgeColor}
                             onChange={(e) => setTopEdgeColor(e.target.value)}
                             className="px-3 py-2 text-sm border border-gray-300 rounded-md flex-1"
+                            disabled={!!topEdgeImage}
                           >
                             <option value="none">None</option>
                             <option value="black">Black</option>
                             <option value="custom">Custom</option>
                           </select>
-                          {topEdgeColor === "custom" && (
+                          {topEdgeColor === "custom" && !topEdgeImage && (
                             <>
                               <input
                                 type="color"
@@ -1351,12 +1356,13 @@ export default function CreatePage() {
                             value={bottomEdgeColor}
                             onChange={(e) => setBottomEdgeColor(e.target.value)}
                             className="px-3 py-2 text-sm border border-gray-300 rounded-md flex-1"
+                            disabled={!!bottomEdgeImage}
                           >
                             <option value="none">None</option>
                             <option value="black">Black</option>
                             <option value="custom">Custom</option>
                           </select>
-                          {bottomEdgeColor === "custom" && (
+                          {bottomEdgeColor === "custom" && !bottomEdgeImage && (
                             <>
                               <input
                                 type="color"
