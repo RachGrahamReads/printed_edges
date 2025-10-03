@@ -26,6 +26,9 @@ export default async function Home() {
               <Link href="/pricing">
                 <Button variant="ghost" size="sm">Pricing</Button>
               </Link>
+              <Link href="/gallery">
+                <Button variant="ghost" size="sm">Gallery</Button>
+              </Link>
               <HowToGuideLinkWrapper />
               <HelpButtonWrapper />
               {user ? (
@@ -182,7 +185,7 @@ export default async function Home() {
         <div className="mb-16">
           <div className="max-w-4xl mx-auto">
             <img
-              src="/printed_edges_interior.png"
+              src="/example1.jpg"
               alt="Printed edges interior demonstration"
               className="w-full rounded-lg shadow-2xl border-4 border-white"
             />

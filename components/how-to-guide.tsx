@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp, Info, Eye, Download, RefreshCw, ImageIcon } from "lucide-react";
@@ -187,6 +187,18 @@ However, if you are intentionally using an off-size image, you may find the foll
       }
     }
   };
+
+  // Listen for custom event to expand a specific help tip
+  useEffect(() => {
+    const handleExpandTip = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      scrollToHelpTip(customEvent.detail);
+    };
+    window.addEventListener('expandHelpTip', handleExpandTip);
+    return () => {
+      window.removeEventListener('expandHelpTip', handleExpandTip);
+    };
+  }, [isExpanded]);
 
   if (!isExpanded) {
     return (

@@ -45,8 +45,8 @@ export default function FAQPage() {
           a: "The edge itself is included in your normal print cost. If you choose colour edges, Amazon charges a little more for colour printing. You can check their pricing calculator to see the difference."
         },
         {
-          q: "Will Amazon always print my edges perfectly?",
-          a: "Amazon usually does a great job, but sometimes trimming can be a little uneven. That's why we highly recommend ordering a proof copy first — and get to see your design in real life before going live!"
+          q: "Will my edges always print perfectly?",
+          a: "Printers usually do a great job, but sometimes pages can be a little offset. If this happens, your edge image may come out looking shaky or blurred. There's no prediction when this will happen: even if you buy in bulk, there'll be difference within the copies you receive. See the Gallery page for examples of printed edges."
         },
         {
           q: "What will the printed edges look like?",
@@ -183,7 +183,41 @@ export default function FAQPage() {
                       {isOpen && (
                         <div className="px-6 pb-6">
                           <p className="text-gray-700 leading-relaxed">
-                            {faq.a}
+                            {faq.a.split('Gallery page').map((part, i, arr) => {
+                              if (i < arr.length - 1) {
+                                // Handle "help guide" link within each part
+                                const helpGuideParts = part.split('help guide');
+                                return (
+                                  <span key={i}>
+                                    {helpGuideParts.map((helpPart, j, helpArr) =>
+                                      j < helpArr.length - 1 ? (
+                                        <span key={`help-${j}`}>
+                                          {helpPart}
+                                          <a href="/#help-transparent" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                                            help guide
+                                          </a>
+                                        </span>
+                                      ) : helpPart
+                                    )}
+                                    <Link href="/gallery" className="text-blue-600 hover:underline">
+                                      Gallery page
+                                    </Link>
+                                  </span>
+                                );
+                              }
+                              // Handle "help guide" link in the last part
+                              const helpGuideParts = part.split('help guide');
+                              return helpGuideParts.map((helpPart, j, helpArr) =>
+                                j < helpArr.length - 1 ? (
+                                  <span key={`help-${j}`}>
+                                    {helpPart}
+                                    <a href="/#help-transparent" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                                      help guide
+                                    </a>
+                                  </span>
+                                ) : helpPart
+                              );
+                            })}
                           </p>
                           {faq.image && (
                             <div className="mt-4">
