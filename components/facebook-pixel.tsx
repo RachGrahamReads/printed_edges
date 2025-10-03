@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { pageview, FB_PIXEL_ID } from '@/lib/facebook-pixel';
 import Script from 'next/script';
 
-export function FacebookPixel() {
+function PixelTracking() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -14,6 +14,11 @@ export function FacebookPixel() {
     pageview();
   }, [pathname, searchParams]);
 
+  return null;
+}
+
+export function FacebookPixel() {
+
   // Don't render if no pixel ID is configured
   if (!FB_PIXEL_ID) {
     return null;
@@ -21,6 +26,9 @@ export function FacebookPixel() {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <PixelTracking />
+      </Suspense>
       <Script
         id="facebook-pixel"
         strategy="afterInteractive"
