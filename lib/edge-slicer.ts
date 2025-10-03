@@ -206,7 +206,8 @@ export async function createRawSlices(
         options.scaleMode || 'fill',
         options.centerMode || 'center',
         options.pdfDimensions,
-        options.pageType
+        options.pageType,
+        'top'  // Pass edge type for reverse slicing
       );
     }
 
@@ -218,7 +219,8 @@ export async function createRawSlices(
         options.scaleMode || 'fill',
         options.centerMode || 'center',
         options.pdfDimensions,
-        options.pageType
+        options.pageType,
+        'bottom'  // Pass edge type for normal slicing
       );
     }
   }
@@ -254,7 +256,8 @@ async function createRawSlicesFromScaledImages(
       numLeaves,
       'horizontal',
       options.pdfDimensions,
-      options.pageType
+      options.pageType,
+      'top'  // Pass edge type for reverse slicing
     );
   }
 
@@ -264,7 +267,8 @@ async function createRawSlicesFromScaledImages(
       numLeaves,
       'horizontal',
       options.pdfDimensions,
-      options.pageType
+      options.pageType,
+      'bottom'  // Pass edge type for normal slicing
     );
   }
 
@@ -277,7 +281,8 @@ async function createSimplifiedSlices(
   numLeaves: number,
   orientation: 'vertical' | 'horizontal',
   pdfDimensions?: { width: number; height: number },
-  pageType: 'bw' | 'standard' | 'premium' = 'standard'
+  pageType: 'bw' | 'standard' | 'premium' = 'standard',
+  edgeType?: 'top' | 'bottom'
 ): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -317,7 +322,11 @@ async function createSimplifiedSlices(
             canvas.height = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
 
             // Extract 1 pixel high slice from the scaled image
-            const sourceY = Math.min(leafIndex, img.height - 1);
+            // For top edge: slice from bottom to top (reverse order)
+            // For bottom edge: slice from top to bottom (normal order)
+            const sourceY = edgeType === 'top'
+              ? Math.min((numLeaves - 1) - leafIndex, img.height - 1)  // Reverse for top
+              : Math.min(leafIndex, img.height - 1);                   // Normal for bottom
 
             // Replicate this slice across the edge strip height
             for (let y = 0; y < canvas.height; y++) {
@@ -1196,7 +1205,8 @@ async function createRawSliceImage(
   scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides',
   centerMode: 'start' | 'center' | 'end',
   pdfDimensions?: { width: number; height: number },
-  pageType: 'bw' | 'standard' | 'premium' = 'standard'
+  pageType: 'bw' | 'standard' | 'premium' = 'standard',
+  edgeType?: 'top' | 'bottom'
 ): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -1308,7 +1318,9 @@ async function createRawSliceImage(
             canvas.height = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
 
             // Calculate source Y position within the sampling region
-            const sourceY = Math.floor(samplingRegion.y + (leafPosition * samplingRegion.height));
+            // For top edge: reverse the leaf position to slice from bottom to top
+            const effectiveLeafPosition = edgeType === 'top' ? (1.0 - leafPosition) : leafPosition;
+            const sourceY = Math.floor(samplingRegion.y + (effectiveLeafPosition * samplingRegion.height));
             const clampedSourceY = Math.min(Math.max(sourceY, 0), img.height - 1);
 
             // Create a pattern by replicating the 1px high slice across the strip height

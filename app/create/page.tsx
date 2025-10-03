@@ -63,6 +63,7 @@ export default function CreatePage() {
   const [canvasReady, setCanvasReady] = useState(false);
   const [isSavingDesign, setIsSavingDesign] = useState(false);
   const [savedDesignName, setSavedDesignName] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
 
   const scaleModeInfoRef = useRef<HTMLDivElement>(null);
@@ -78,6 +79,11 @@ export default function CreatePage() {
     const loadUserData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
+
+      // Check if user is admin
+      if (user?.email === 'rachgrahamreads@gmail.com') {
+        setIsAdmin(true);
+      }
 
       // Fetch credits if user is logged in
       if (user) {
@@ -805,7 +811,7 @@ export default function CreatePage() {
   };
 
   const handlePreview = async () => {
-    if (pdfFile && (sideEdgeImage || topEdgeColor !== "none" || bottomEdgeColor !== "none")) {
+    if (pdfFile && (sideEdgeImage || topEdgeImage || bottomEdgeImage || topEdgeColor !== "none" || bottomEdgeColor !== "none")) {
       setIsLoadingPreview(true);
       setPreviewError(null);
       setCanvasReady(false);
@@ -1387,36 +1393,42 @@ export default function CreatePage() {
                     </div>
                   </div>
 
-                  {/* Future image upload options (commented out for now) */}
-                  {/*
-                  <div>
-                    <Label htmlFor="topImage" className="text-sm">Top Edge Image <span className="text-gray-500">(optional)</span></Label>
-                    <Input
-                      id="topImage"
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleEdgeImageUpload(e, 'top')}
-                      className="mt-1"
-                    />
-                    {topEdgeImage && (
-                      <p className="text-xs text-green-600 mt-1">✅ Top edge uploaded</p>
-                    )}
-                  </div>
+                  {/* Admin-only top/bottom image upload options */}
+                  {isAdmin && (
+                    <>
+                      <div className="bg-white p-4 rounded-lg border border-gray-200">
+                        <Label htmlFor="topImage" className="text-sm font-medium mb-2 block">Top Edge Image <span className="text-gray-500">(Admin only - optional)</span></Label>
+                        <Input
+                          id="topImage"
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleEdgeImageUpload(e, 'top')}
+                          className="border-dashed border-2 h-10 hover:border-purple-300 transition-colors"
+                        />
+                        {topEdgeImage && (
+                          <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" /> Top edge uploaded
+                          </p>
+                        )}
+                      </div>
 
-                  <div>
-                    <Label htmlFor="bottomImage" className="text-sm">Bottom Edge Image <span className="text-gray-500">(optional)</span></Label>
-                    <Input
-                      id="bottomImage"
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleEdgeImageUpload(e, 'bottom')}
-                      className="mt-1"
-                    />
-                    {bottomEdgeImage && (
-                      <p className="text-xs text-green-600 mt-1">✅ Bottom edge uploaded</p>
-                    )}
-                  </div>
-                  */}
+                      <div className="bg-white p-4 rounded-lg border border-gray-200">
+                        <Label htmlFor="bottomImage" className="text-sm font-medium mb-2 block">Bottom Edge Image <span className="text-gray-500">(Admin only - optional)</span></Label>
+                        <Input
+                          id="bottomImage"
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleEdgeImageUpload(e, 'bottom')}
+                          className="border-dashed border-2 h-10 hover:border-purple-300 transition-colors"
+                        />
+                        {bottomEdgeImage && (
+                          <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" /> Bottom edge uploaded
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
 
                   {/* Scaling Options - moved here */}
                   {sideEdgeImage && (
