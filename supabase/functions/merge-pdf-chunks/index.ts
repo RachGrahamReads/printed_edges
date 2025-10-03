@@ -15,6 +15,35 @@ interface MergeRequest {
   outputPath: string;
 }
 
+// Retry utility with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000,
+  context: string = "operation"
+): Promise<T> {
+  let lastError: Error;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+
+      if (attempt === maxRetries) {
+        console.error(`${context} failed after ${maxRetries + 1} attempts:`, lastError);
+        throw lastError;
+      }
+
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.warn(`${context} failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`, error);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError!;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -72,10 +101,23 @@ serve(async (req) => {
 
         console.log(`Merging chunk ${chunkIndex + 1}/${requestData.totalChunks}: ${chunkPath}`);
 
-        // Download the processed chunk
-        const { data: chunkData, error: downloadError } = await supabase.storage
-          .from("processed-pdfs")
-          .download(chunkPath);
+        // Download the processed chunk with retry logic
+        const { data: chunkData, error: downloadError } = await retryWithBackoff(
+          async () => {
+            const result = await supabase.storage
+              .from("processed-pdfs")
+              .download(chunkPath);
+
+            if (result.error) {
+              throw new Error(result.error.message || JSON.stringify(result.error));
+            }
+
+            return result;
+          },
+          3, // max 3 retries
+          1000, // start with 1 second delay
+          `Download chunk ${chunkIndex + 1}/${requestData.totalChunks}`
+        );
 
         if (downloadError) {
           console.error(`Failed to download chunk ${chunkIndex}:`, downloadError);

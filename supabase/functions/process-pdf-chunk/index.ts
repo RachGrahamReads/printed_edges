@@ -15,6 +15,35 @@ const POINTS_PER_INCH = 72;
 const BLEED_POINTS = BLEED_INCHES * POINTS_PER_INCH;
 const SAFETY_BUFFER_POINTS = SAFETY_BUFFER_INCHES * POINTS_PER_INCH;
 
+// Retry utility with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000,
+  context: string = "operation"
+): Promise<T> {
+  let lastError: Error;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+
+      if (attempt === maxRetries) {
+        console.error(`${context} failed after ${maxRetries + 1} attempts:`, lastError);
+        throw lastError;
+      }
+
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.warn(`${context} failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`, error);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError!;
+}
+
 interface SliceStoragePaths {
   side?: {
     raw: string[];
@@ -68,10 +97,23 @@ serve(async (req) => {
     console.log(`Global pages: ${requestData.startPage + 1}-${requestData.endPage + 1}`);
     console.log(`Chunk path: ${requestData.chunkPath}`);
 
-    // Download the PDF chunk
-    const { data: pdfData, error: downloadError } = await supabase.storage
-      .from("pdfs")
-      .download(requestData.chunkPath);
+    // Download the PDF chunk with retry logic
+    const { data: pdfData, error: downloadError } = await retryWithBackoff(
+      async () => {
+        const result = await supabase.storage
+          .from("pdfs")
+          .download(requestData.chunkPath);
+
+        if (result.error) {
+          throw new Error(result.error.message || JSON.stringify(result.error));
+        }
+
+        return result;
+      },
+      3, // max 3 retries
+      1000, // start with 1 second delay
+      `Download PDF chunk ${requestData.chunkIndex + 1}/${requestData.totalChunks}`
+    );
 
     if (downloadError) throw new Error(`Failed to download chunk: ${downloadError.message}`);
 
@@ -275,10 +317,23 @@ async function addEdgeToPage(
     let cacheKey = slicePath;
 
     if (slicePath.endsWith('.txt')) {
-      // This is a virtual slice - get the metadata
-      const { data: metadataData, error: metadataError } = await supabase.storage
-        .from("edge-images")
-        .download(slicePath);
+      // This is a virtual slice - get the metadata with retry logic
+      const { data: metadataData, error: metadataError } = await retryWithBackoff(
+        async () => {
+          const result = await supabase.storage
+            .from("edge-images")
+            .download(slicePath);
+
+          if (result.error) {
+            throw new Error(result.error.message || JSON.stringify(result.error));
+          }
+
+          return result;
+        },
+        3,
+        1000,
+        `Download slice metadata for ${edgeType} edge`
+      );
 
       if (metadataError) throw new Error(`Failed to download slice metadata: ${metadataError.message}`);
 
@@ -290,9 +345,22 @@ async function addEdgeToPage(
 
       // Load the original image if not already loaded
       if (!loadedSlices[cacheKey]) {
-        const { data: originalImageData, error: imageError } = await supabase.storage
-          .from("edge-images")
-          .download(sliceMetadata.originalImagePath);
+        const { data: originalImageData, error: imageError } = await retryWithBackoff(
+          async () => {
+            const result = await supabase.storage
+              .from("edge-images")
+              .download(sliceMetadata.originalImagePath);
+
+            if (result.error) {
+              throw new Error(result.error.message || JSON.stringify(result.error));
+            }
+
+            return result;
+          },
+          3,
+          1000,
+          `Download original image for ${edgeType} edge`
+        );
 
         if (imageError) throw new Error(`Failed to download original image: ${imageError.message}`);
 
@@ -309,9 +377,22 @@ async function addEdgeToPage(
     } else {
       // This is a real pre-sliced image
       if (!loadedSlices[slicePath]) {
-        const { data: sliceData, error: sliceError } = await supabase.storage
-          .from("edge-images")
-          .download(slicePath);
+        const { data: sliceData, error: sliceError } = await retryWithBackoff(
+          async () => {
+            const result = await supabase.storage
+              .from("edge-images")
+              .download(slicePath);
+
+            if (result.error) {
+              throw new Error(result.error.message || JSON.stringify(result.error));
+            }
+
+            return result;
+          },
+          3,
+          1000,
+          `Download slice for ${edgeType} edge`
+        );
 
         if (sliceError) throw new Error(`Failed to download slice: ${sliceError.message}`);
 
