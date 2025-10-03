@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import { FacebookPixel } from "@/components/facebook-pixel";
 
 const defaultUrl = process.env.NODE_ENV === 'production'
   ? "https://printed-edges.rachgrahamreads.com"
@@ -49,6 +50,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.className} antialiased`}>
+        <FacebookPixel />
         {children}
       </body>
     </html>

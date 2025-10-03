@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SiteFooter } from "@/components/site-footer";
+import { trackInitiateCheckout } from "@/lib/facebook-pixel";
 
 const pricingPlans = [
   {
@@ -126,6 +127,18 @@ export default function PricingPage() {
       if (!user) {
         router.push("/auth/login");
         return;
+      }
+
+      // Track checkout initiation in Facebook Pixel
+      const plan = pricingPlans.find(p => p.id === planId);
+      if (plan) {
+        const discountedPrice = calculateDiscountedPrice(plan.price);
+        trackInitiateCheckout(discountedPrice, 'USD', {
+          content_name: plan.name,
+          content_type: 'product',
+          content_ids: [planId],
+          num_items: plan.credits,
+        });
       }
 
       // Create checkout session

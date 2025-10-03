@@ -10,6 +10,7 @@ import { Plus, CreditCard, FileImage, History, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { HelpButton } from "@/components/help-button";
+import { trackPurchase } from "@/lib/facebook-pixel";
 
 interface UserCredits {
   total_credits: number;
@@ -112,6 +113,20 @@ export function DashboardContent({ user }: DashboardContentProps) {
             setPaymentMessage('Payment already processed. Your credits are available!');
           } else {
             setPaymentMessage(`Success! ${data.creditsGranted} credits have been added to your account.`);
+          }
+
+          // Track purchase in Facebook Pixel
+          const creditsCount = parseInt(expectedCredits);
+          // Map credits to price (matching pricing page)
+          const purchaseValue = creditsCount === 1 ? 39 : creditsCount === 3 ? 99 : 0;
+
+          if (purchaseValue > 0) {
+            trackPurchase(purchaseValue, 'USD', {
+              content_name: `${creditsCount} Edge Design Credit${creditsCount > 1 ? 's' : ''}`,
+              content_type: 'product',
+              content_ids: [creditsCount === 1 ? 'single_image' : 'three_images'],
+              num_items: creditsCount,
+            });
           }
 
           // Refresh dashboard data to show new credits
