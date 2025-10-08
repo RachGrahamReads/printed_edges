@@ -357,80 +357,143 @@ export default async function Home() {
           </div>
         </div>
 
-        {/* Custom Designs Section */}
-        <div className="text-center mb-16" id="custom-designs">
-          <h2 className="text-3xl font-bold mb-8">Custom Design Services</h2>
-          <div className="max-w-4xl mx-auto">
-            <Card className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200">
+      </div>
+
+      {/* Done-For-You Services Section - Separate Background */}
+      <div className="bg-gradient-to-br from-slate-100 to-slate-200 py-16 -mx-8 px-8 mb-16">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12" id="custom-designs">
+            <h2 className="text-3xl font-bold mb-4">Done-For-You Services</h2>
+            <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
+              Let us handle the details while you focus on your writing
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto mb-12">
+            {/* Custom Edge Design */}
+            <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200">
               <CardHeader className="text-center">
-                <CardTitle className="text-2xl text-amber-900">Done-For-You Edge Designs</CardTitle>
+                <CardTitle className="text-2xl text-amber-900">Custom Edge Design</CardTitle>
                 <CardDescription className="text-lg text-amber-700">
-                  Custom designs to match your cover, book vibe, or preferences
+                  Professional edge designs tailored to your book
                 </CardDescription>
+                <div className="mt-4">
+                  <span className="text-4xl font-bold text-amber-900">$60</span>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="text-center">
-                  <div className="text-4xl font-bold text-amber-900 mb-2">$60</div>
-                  <div className="text-lg text-amber-700">per custom design</div>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-6 text-left">
-                  <div>
-                    <h4 className="font-semibold text-amber-900 mb-3">Perfect for:</h4>
-                    <ul className="space-y-2 text-amber-700">
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
-                        Special edition releases
-                      </li>
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
-                        Multi-book series with cohesive design
-                      </li>
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
-                        Matching your existing cover aesthetic
-                      </li>
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
-                        Unique designs for your book's theme
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div>
-                    <h4 className="font-semibold text-amber-900 mb-3">What you get:</h4>
-                    <ul className="space-y-2 text-amber-700">
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
-                        Professional custom design
-                      </li>
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
-                        Print-ready files
-                      </li>
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
-                        Full commercial rights
-                      </li>
-                      <li className="flex items-center">
-                        <Check className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
-                        Optional formatting services available
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="bg-white p-4 rounded-lg border border-amber-200">
+              <CardContent className="space-y-4">
+                <ul className="space-y-3 text-left">
+                  <li className="flex items-start">
+                    <Check className="h-5 w-5 text-amber-600 mr-2 flex-shrink-0 mt-0.5" />
+                    <span className="text-amber-800">Custom design matching your cover aesthetic</span>
+                  </li>
+                  <li className="flex items-start">
+                    <Check className="h-5 w-5 text-amber-600 mr-2 flex-shrink-0 mt-0.5" />
+                    <span className="text-amber-800">Perfect for series with cohesive branding</span>
+                  </li>
+                  <li className="flex items-start">
+                    <Check className="h-5 w-5 text-amber-600 mr-2 flex-shrink-0 mt-0.5" />
+                    <span className="text-amber-800">Print-ready files with full commercial rights</span>
+                  </li>
+                  <li className="flex items-start">
+                    <Check className="h-5 w-5 text-amber-600 mr-2 flex-shrink-0 mt-0.5" />
+                    <span className="text-amber-800">Unique designs for your book's theme</span>
+                  </li>
+                </ul>
+                <div className="pt-2">
                   <Button className="w-full bg-amber-600 hover:bg-amber-700" asChild>
-                    <a href="mailto:hello@rachgrahamreads.com?subject=Custom Edge Design Inquiry">
-                      Contact Us for Custom Designs
+                    <a href="mailto:hello@rachgrahamreads.com?subject=Custom Edge Design - $60">
+                      Request Custom Design
+                    </a>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Full Service Package */}
+            <Card className="bg-gradient-to-br from-purple-50 to-blue-50 border-2 border-purple-300">
+              <CardHeader className="text-center">
+                <CardTitle className="text-2xl text-purple-900">Full Service Package</CardTitle>
+                <CardDescription className="text-lg text-purple-700">
+                  Complete service from design to delivery
+                </CardDescription>
+                <div className="mt-4">
+                  <span className="text-4xl font-bold text-purple-900">$100</span>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ul className="space-y-3 text-left">
+                  <li className="flex items-start">
+                    <Check className="h-5 w-5 text-purple-600 mr-2 flex-shrink-0 mt-0.5" />
+                    <span className="text-purple-800">Everything in Custom Edge Design</span>
+                  </li>
+                  <li className="flex items-start">
+                    <Check className="h-5 w-5 text-purple-600 mr-2 flex-shrink-0 mt-0.5" />
+                    <span className="text-purple-800">Professional image creation & processing</span>
+                  </li>
+                  <li className="flex items-start">
+                    <Check className="h-5 w-5 text-purple-600 mr-2 flex-shrink-0 mt-0.5" />
+                    <span className="text-purple-800">Complete PDF processing included</span>
+                  </li>
+                  <li className="flex items-start">
+                    <Check className="h-5 w-5 text-purple-600 mr-2 flex-shrink-0 mt-0.5" />
+                    <span className="text-purple-800">Full support from start to finish</span>
+                  </li>
+                </ul>
+                <div className="pt-2">
+                  <Button className="w-full bg-purple-600 hover:bg-purple-700" asChild>
+                    <a href="mailto:hello@rachgrahamreads.com?subject=Full Service Package - $100">
+                      Request Full Service
                     </a>
                   </Button>
                 </div>
               </CardContent>
             </Card>
           </div>
+
+          {/* Additional Services */}
+          <div className="max-w-5xl mx-auto">
+            <h3 className="text-2xl font-bold text-center mb-6">Additional Services</h3>
+            <div className="grid md:grid-cols-2 gap-6">
+              <Card className="border-2 bg-white">
+                <CardHeader className="text-center pb-3">
+                  <CardTitle className="text-xl">Book Formatting</CardTitle>
+                  <div className="text-3xl font-bold text-blue-600 mt-2">$30</div>
+                </CardHeader>
+                <CardContent className="text-center">
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Professional interior formatting for print-ready perfection
+                  </p>
+                  <Button variant="outline" className="w-full" asChild>
+                    <a href="mailto:hello@rachgrahamreads.com?subject=Book Formatting - $30">
+                      Contact for Formatting
+                    </a>
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card className="border-2 bg-white">
+                <CardHeader className="text-center pb-3">
+                  <CardTitle className="text-xl">Amazon Upload Service</CardTitle>
+                  <div className="text-3xl font-bold text-blue-600 mt-2">$50</div>
+                </CardHeader>
+                <CardContent className="text-center">
+                  <p className="text-sm text-muted-foreground mb-3">
+                    We'll handle uploading your book to Amazon KDP & other retailers
+                  </p>
+                  <Button variant="outline" className="w-full" asChild>
+                    <a href="mailto:hello@rachgrahamreads.com?subject=Amazon Upload Service - $50">
+                      Contact for Upload
+                    </a>
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto">
 
         {/* CTA Section */}
         <div className="text-center mb-8">
