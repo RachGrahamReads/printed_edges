@@ -98,6 +98,60 @@ export default async function Home() {
           </div>
         </div>
 
+        {/* How It Actually Works - Process Clarity */}
+        <div className="mb-16">
+          <Card className="max-w-4xl mx-auto bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200">
+            <CardContent className="p-8">
+              <h2 className="text-3xl font-bold text-center mb-8 text-blue-900 leading-tight">
+                Same Process. Same Quality. Same Printers.<br/><span className="italic text-purple-600">Beautiful Edges.</span>
+              </h2>
+
+              <div className="grid md:grid-cols-3 gap-6 mb-8">
+                <div className="text-center">
+                  <div className="bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center text-xl font-bold mx-auto mb-3">1</div>
+                  <p className="text-gray-700"><strong>You create</strong> your edge image<br/><span className="text-sm text-gray-500">(or we create it for you)</span></p>
+                </div>
+                <div className="text-center">
+                  <div className="bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center text-xl font-bold mx-auto mb-3">2</div>
+                  <p className="text-gray-700"><strong>We place it</strong> on your PDF</p>
+                </div>
+                <div className="text-center">
+                  <div className="bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center text-xl font-bold mx-auto mb-3">3</div>
+                  <p className="text-gray-700"><strong>You upload</strong> to Amazon<br/><span className="text-sm text-gray-500">(same as always)</span></p>
+                </div>
+              </div>
+
+              <div className="bg-white/90 rounded-lg p-6 border border-green-300">
+                <div className="flex items-center justify-center gap-2 mb-4">
+                  <h3 className="font-bold text-lg text-green-900">No Extra Steps. No Extra Costs.</h3>
+                </div>
+                <div className="grid md:grid-cols-2 gap-x-8 gap-y-2 text-gray-700">
+                  <div className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+                    <span>Same printing quality</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+                    <span>Same upload process</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+                    <span>Same printing costs</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+                    <span>Same turnaround times</span>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-center text-gray-600 italic mt-6 text-sm">
+                Your finished PDF is just a regular book file—now with beautiful edges. Upload it like any other book!
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Features Section */}
         <div className="grid md:grid-cols-3 gap-8 mb-16">
           <Card>
