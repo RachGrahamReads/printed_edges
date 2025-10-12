@@ -9,9 +9,10 @@ SELECT
     au.email,
     -- Get name from public.users first, then fallback to metadata, then email prefix
     COALESCE(
-        pu.first_name,
+        pu.name,
         au.raw_user_meta_data->>'first_name',
         au.raw_user_meta_data->>'firstName',
+        au.raw_user_meta_data->>'name',
         split_part(au.email, '@', 1)
     ) as name,
     CASE
@@ -52,6 +53,3 @@ ORDER BY au.created_at DESC;
 -- Grant permissions
 GRANT SELECT ON public.admin_user_overview TO service_role;
 GRANT SELECT ON public.admin_user_overview TO authenticated;
-
--- Add comment
-COMMENT ON VIEW public.admin_user_overview IS 'Admin view showing user details with proper name fallback logic';

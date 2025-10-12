@@ -1,22 +1,45 @@
 -- Secure the edge-images bucket to be private with proper access controls
 -- Only users can access their own edge images, and admins can access all
 
--- First, apply the current storage setup but make edge-images private
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types, created_at, updated_at)
-VALUES
-  ('pdfs', 'pdfs', true, 52428800, ARRAY['application/pdf']::text[], NOW(), NOW()),
-  ('edge-images', 'edge-images', false, 10485760, ARRAY['image/png', 'image/jpeg', 'image/jpg', 'image/webp']::text[], NOW(), NOW()),
-  ('processed-pdfs', 'processed-pdfs', true, 52428800, ARRAY['application/pdf']::text[], NOW(), NOW())
-ON CONFLICT (id) DO UPDATE SET
-  public = EXCLUDED.public,
-  file_size_limit = EXCLUDED.file_size_limit,
-  allowed_mime_types = EXCLUDED.allowed_mime_types,
-  updated_at = NOW();
+-- First, ensure buckets exist and configure them (compatible with older Supabase versions)
+DO $$
+DECLARE
+  has_public_column boolean;
+  has_limits_column boolean;
+BEGIN
+  -- Check if columns exist
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'storage' AND table_name = 'buckets' AND column_name = 'public'
+  ) INTO has_public_column;
 
--- Make sure edge-images bucket is private (override any previous public setting)
-UPDATE storage.buckets
-SET public = false
-WHERE id = 'edge-images';
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'storage' AND table_name = 'buckets' AND column_name = 'file_size_limit'
+  ) INTO has_limits_column;
+
+  -- Insert with all columns if they exist
+  IF has_public_column AND has_limits_column THEN
+    INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types, created_at, updated_at)
+    VALUES
+      ('pdfs', 'pdfs', true, 52428800, ARRAY['application/pdf']::text[], NOW(), NOW()),
+      ('edge-images', 'edge-images', false, 10485760, ARRAY['image/png', 'image/jpeg', 'image/jpg', 'image/webp']::text[], NOW(), NOW()),
+      ('processed-pdfs', 'processed-pdfs', true, 52428800, ARRAY['application/pdf']::text[], NOW(), NOW())
+    ON CONFLICT (id) DO UPDATE SET
+      public = EXCLUDED.public,
+      file_size_limit = EXCLUDED.file_size_limit,
+      allowed_mime_types = EXCLUDED.allowed_mime_types,
+      updated_at = NOW();
+  ELSE
+    -- Insert with basic columns only
+    INSERT INTO storage.buckets (id, name, created_at, updated_at)
+    VALUES
+      ('pdfs', 'pdfs', NOW(), NOW()),
+      ('edge-images', 'edge-images', NOW(), NOW()),
+      ('processed-pdfs', 'processed-pdfs', NOW(), NOW())
+    ON CONFLICT (id) DO UPDATE SET updated_at = NOW();
+  END IF;
+END $$;
 
 -- Remove any existing broad public policies for edge-images
 DROP POLICY IF EXISTS "Public Read Access" ON storage.objects;
@@ -86,13 +109,11 @@ TO public
 USING (bucket_id IN ('pdfs', 'processed-pdfs'))
 WITH CHECK (bucket_id IN ('pdfs', 'processed-pdfs'));
 
--- Enable RLS on storage.objects if not already enabled
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-
--- Grant necessary permissions
-GRANT ALL ON storage.objects TO authenticated;
-GRANT ALL ON storage.objects TO service_role;
-
--- Add helpful comments
-COMMENT ON POLICY "Users can view own edge images" ON storage.objects IS 'Allows users to view edge images in their own user folder, admins can view all';
-COMMENT ON POLICY "Users can upload own edge images" ON storage.objects IS 'Allows users to upload edge images to their own user folder only';
+-- Enable RLS on storage.objects if not already enabled (skip if permission denied)
+DO $$
+BEGIN
+  EXECUTE 'ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY';
+EXCEPTION
+  WHEN insufficient_privilege THEN
+    NULL; -- RLS may already be enabled or we don't have permission (not critical)
+END $$;

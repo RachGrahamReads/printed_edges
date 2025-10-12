@@ -358,6 +358,13 @@ export async function processPDFWithChunking(
 
     const pdfBuffer = await finalPdf.arrayBuffer();
 
+    // Clean up: Delete the processed PDF from storage after successful download
+    // This prevents storage from filling up since we don't store PDFs long-term
+    await supabase.storage
+      .from('processed-pdfs')
+      .remove([finalPdfPath])
+      .catch(err => console.warn('Failed to cleanup processed PDF:', err));
+
     // Return PDF buffer and slice paths (when using design-based paths)
     if (useDesignPaths) {
       return {

@@ -114,14 +114,25 @@ export async function processPDFWithSupabase(
 
     // Handle the response from Edge Function
     if (data.success) {
+      const processedPdfPath = `${sessionId}/processed.pdf`;
+
       // Download the processed PDF directly from storage using Supabase SDK
       const { data: pdfData, error: downloadError } = await supabase.storage
         .from('processed-pdfs')
-        .download(`${sessionId}/processed.pdf`);
+        .download(processedPdfPath);
 
       if (downloadError) throw new Error(`Failed to download processed PDF: ${downloadError.message}`);
 
-      return await pdfData.arrayBuffer();
+      const arrayBuffer = await pdfData.arrayBuffer();
+
+      // Clean up: Delete the processed PDF from storage after successful download
+      // This prevents storage from filling up since we don't store PDFs long-term
+      await supabase.storage
+        .from('processed-pdfs')
+        .remove([processedPdfPath])
+        .catch(err => console.warn('Failed to cleanup processed PDF:', err));
+
+      return arrayBuffer;
     }
 
     // Fallback: if Edge Function returns base64 data directly

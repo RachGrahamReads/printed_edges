@@ -29,6 +29,9 @@ export default async function Home() {
               <Link href="/gallery">
                 <Button variant="ghost" size="sm">Gallery</Button>
               </Link>
+              <Link href="/mockup">
+                <Button variant="ghost" size="sm">Mockup Generator</Button>
+              </Link>
               <HowToGuideLinkWrapper />
               <HelpButtonWrapper />
               {user ? (

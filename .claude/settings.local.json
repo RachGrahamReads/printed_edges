@@ -42,7 +42,19 @@
       "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions logs process-pdf-chunked --limit 20)",
       "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions list)",
       "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions deploy merge-pdf-chunks)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(chmod:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions deploy generate-book-mockup)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase storage create mockup-uploads --public --file-size-limit 10MB --allowed-mime-types \"image/png,image/jpeg,image/jpg,image/webp\" --project-ref gsndpkiedjojlqpjdwgu)",
+      "Bash(awk:*)",
+      "Bash(xargs:*)",
+      "Bash(find:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker volume prune:*)",
+      "Bash(supabase:*)",
+      "Bash(docker volume rm:*)",
+      "Bash(pkill:*)"
     ],
     "deny": [],
     "ask": []
