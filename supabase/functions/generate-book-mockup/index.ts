@@ -575,26 +575,24 @@ serve(async (req) => {
       const quadAspect = quadWidth / quadHeight;
       const coverAspect = coverWidth / coverHeight;
 
-      // Calculate how to fit the cover image into the quad using "cover" fit
-      // (fill the entire quad, cropping the excess)
+      // Calculate how to fit the cover image into the quad
+      // Strategy: Always fit by WIDTH, crop top/bottom if needed
+      // This prevents stretching and maintains the cover's width
 
       // Determine crop amounts
       let cropX = 0;  // Amount to crop from left/right (in source image normalized coords)
       let cropY = 0;  // Amount to crop from top/bottom (in source image normalized coords)
 
-      if (coverAspect > quadAspect) {
-        // Cover is WIDER than quad - fit by HEIGHT, crop WIDTH
-        // Calculate how much width to crop
-        const targetWidth = quadAspect / coverAspect;  // What width ratio we need
-        cropX = (1 - targetWidth) / 2;  // Crop equally from both sides
-      } else {
-        // Cover is TALLER than quad - fit by WIDTH, crop HEIGHT
-        // Calculate how much height to crop
-        const targetHeight = coverAspect / quadAspect;  // What height ratio we need
-        cropY = (1 - targetHeight) / 2;  // Crop equally from top and bottom
+      // Always fit by width, crop height
+      const targetHeight = coverAspect / quadAspect;  // What height ratio we need
+      if (targetHeight > 1) {
+        // Image is taller than needed - crop top/bottom
+        cropY = (1 - (1 / targetHeight)) / 2;  // Crop equally from top and bottom
       }
+      // If targetHeight < 1, image is shorter than quad - it will stretch slightly
+      // But we prioritize avoiding horizontal stretching
 
-      console.log('Crop transform:', { coverAspect, quadAspect, cropX, cropY });
+      console.log('Crop transform:', { coverAspect, quadAspect, cropX, cropY, targetHeight });
 
       // For each pixel in the quad region, map to source cover
       const quadMinX = Math.min(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
