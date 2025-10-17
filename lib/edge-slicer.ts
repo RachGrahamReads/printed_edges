@@ -761,33 +761,50 @@ export async function createAndStoreDesignMaskedSlices(
     console.log(`Creating masked side slices for design ${designId}...`);
 
     const maskPromises = rawSlicesPaths.side.raw.map(async (rawPath, i) => {
-      // Download the raw slice
-      const { data: rawSliceData, error: downloadError } = await supabase.storage
-        .from('edge-images')
-        .download(rawPath);
+      let retryCount = 0;
+      const maxRetries = 3;
 
-      if (downloadError) throw new Error(`Failed to download raw side slice ${i}: ${downloadError.message}`);
+      while (retryCount < maxRetries) {
+        try {
+          const { data: rawSliceData, error: downloadError } = await supabase.storage
+            .from('edge-images')
+            .download(rawPath);
 
-      // Convert to base64
-      const buffer = await rawSliceData.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      const base64 = btoa(String.fromCharCode(...bytes));
+          if (downloadError) throw new Error(`Download failed: ${downloadError.message}`);
 
-      // Apply triangle mask
-      const maskedBase64 = await applyTriangleMaskToSlice(base64, 'side');
-      const maskedBytes = base64ToUint8Array(maskedBase64);
+          const buffer = await rawSliceData.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          const base64 = btoa(String.fromCharCode(...bytes));
 
-      // Store masked slice
-      const maskedPath = `${designBasePath}/slices/masked/side_${i}.png`;
-      const { error: uploadError } = await supabase.storage
-        .from('edge-images')
-        .upload(maskedPath, maskedBytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+          const maskedBase64 = await applyTriangleMaskToSlice(base64, 'side');
+          const maskedBytes = base64ToUint8Array(maskedBase64);
 
-      if (uploadError) throw new Error(`Failed to store masked side slice ${i}: ${uploadError.message}`);
-      return { index: i, path: maskedPath };
+          const maskedPath = `${designBasePath}/slices/masked/side_${i}.png`;
+          const { error: uploadError } = await supabase.storage
+            .from('edge-images')
+            .upload(maskedPath, maskedBytes, {
+              contentType: 'image/png',
+              upsert: true
+            });
+
+          if (uploadError) {
+            // Log full error object for debugging
+            console.error(`Upload error for side slice ${i}:`, JSON.stringify(uploadError, null, 2));
+            throw new Error(`Upload failed: ${JSON.stringify(uploadError)}`);
+          }
+          return { index: i, path: maskedPath };
+        } catch (error) {
+          retryCount++;
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          console.error(`Error processing side slice ${i} (attempt ${retryCount}/${maxRetries}):`, errorMsg);
+
+          if (retryCount >= maxRetries) {
+            throw new Error(`Failed to process side slice ${i} after ${maxRetries} attempts: ${errorMsg}`);
+          }
+          console.warn(`Retry ${retryCount}/${maxRetries} for side slice ${i}`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
     });
 
     const results = await Promise.all(maskPromises);
