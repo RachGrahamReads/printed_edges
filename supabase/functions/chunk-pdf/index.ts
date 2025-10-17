@@ -14,6 +14,8 @@ interface ChunkRequest {
   sessionId: string;
   pdfPath: string;
   totalPages: number;
+  startPage?: number; // Optional: start page for progressive chunking (0-indexed)
+  endPage?: number;   // Optional: end page for progressive chunking (0-indexed)
 }
 
 interface ChunkInfo {
@@ -47,124 +49,147 @@ serve(async (req) => {
     }
 
     console.log("Chunking PDF for session:", requestData.sessionId);
-    console.log("Total pages:", requestData.totalPages);
+    console.log("Total pages in document:", requestData.totalPages);
 
-    // Calculate number of chunks needed
-    const totalChunks = Math.ceil(requestData.totalPages / CHUNK_SIZE);
+    // Determine which pages to chunk (support progressive chunking)
+    const startPage = requestData.startPage ?? 0;
+    const endPage = requestData.endPage ?? (requestData.totalPages - 1);
+    const pagesToChunk = endPage - startPage + 1;
+
+    console.log(`Chunking pages ${startPage + 1}-${endPage + 1} (${pagesToChunk} pages)`);
+
+    // Calculate number of chunks needed for this range
+    const totalChunks = Math.ceil(pagesToChunk / CHUNK_SIZE);
     console.log(`Creating ${totalChunks} chunks of ~${CHUNK_SIZE} pages each`);
 
-    // Download the original PDF
-    const { data: pdfData, error: downloadError } = await supabase.storage
-      .from("pdfs")
-      .download(requestData.pdfPath);
+    // Download the original PDF with retry logic
+    let pdfData: Blob | null = null;
+    let retryCount = 0;
+    const maxRetries = 3;
 
-    if (downloadError) throw new Error(`Failed to download PDF: ${downloadError.message}`);
+    while (!pdfData && retryCount < maxRetries) {
+      try {
+        const { data, error: downloadError } = await supabase.storage
+          .from("pdfs")
+          .download(requestData.pdfPath);
+
+        if (downloadError) {
+          throw new Error(downloadError.message);
+        }
+
+        pdfData = data;
+      } catch (downloadError) {
+        retryCount++;
+        if (retryCount >= maxRetries) {
+          throw new Error(`Failed to download PDF after ${maxRetries} attempts: ${downloadError.message}`);
+        }
+        const backoffTime = 1000 * Math.pow(2, retryCount - 1);
+        console.warn(`Download attempt ${retryCount}/${maxRetries} failed, retrying in ${backoffTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, backoffTime));
+      }
+    }
+
+    if (!pdfData) {
+      throw new Error("Failed to download PDF: No data returned");
+    }
 
     const pdfBytes = await pdfData.arrayBuffer();
     const sourcePdf = await PDFDocument.load(pdfBytes);
 
     const chunks: ChunkInfo[] = [];
+    const startTime = Date.now();
+    const maxExecutionTime = 80000; // 80 seconds (leave buffer before Edge Function timeout)
 
-    // Process chunks in batches to avoid timeout
-    const BATCH_SIZE = 50; // Process 50 chunks at a time
-    const batches = [];
-    for (let i = 0; i < totalChunks; i += BATCH_SIZE) {
-      batches.push({
-        start: i,
-        end: Math.min(i + BATCH_SIZE, totalChunks)
-      });
-    }
+    // Create chunks for the specified page range
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+      // Check if we're approaching timeout
+      const elapsedTime = Date.now() - startTime;
+      if (elapsedTime > maxExecutionTime) {
+        console.warn(`⚠️ Approaching function timeout after processing ${chunks.length}/${totalChunks} chunks`);
+        throw new Error(`Function timeout: Only processed ${chunks.length} of ${totalChunks} chunks. Try smaller batch size.`);
+      }
+      // Calculate local page indices within this batch
+      const localStartPage = chunkIndex * CHUNK_SIZE;
+      const localEndPage = Math.min(localStartPage + CHUNK_SIZE - 1, pagesToChunk - 1);
 
-    console.log(`Processing ${totalChunks} chunks in ${batches.length} batches of up to ${BATCH_SIZE}`);
+      // Calculate global page indices in the full document
+      const globalStartPage = startPage + localStartPage;
+      const globalEndPage = startPage + localEndPage;
+      const pageCount = localEndPage - localStartPage + 1;
 
-    // Process each batch
-    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-      const batch = batches[batchIndex];
-      console.log(`Processing chunk batch ${batchIndex + 1}/${batches.length} (chunks ${batch.start + 1}-${batch.end})`);
+      // Calculate global chunk index (used for file naming and tracking)
+      const globalChunkIndex = globalStartPage; // Use global start page as chunk index
 
-      // Create chunks in this batch
-      for (let chunkIndex = batch.start; chunkIndex < batch.end; chunkIndex++) {
-        const startPage = chunkIndex * CHUNK_SIZE;
-        const endPage = Math.min(startPage + CHUNK_SIZE - 1, requestData.totalPages - 1);
-        const pageCount = endPage - startPage + 1;
+      console.log(`Creating chunk ${chunkIndex + 1}/${totalChunks}: pages ${globalStartPage + 1}-${globalEndPage + 1} (${pageCount} pages)`);
 
-        console.log(`Creating chunk ${chunkIndex + 1}/${totalChunks}: pages ${startPage + 1}-${endPage + 1} (${pageCount} pages)`);
+      try {
+        // Create a new PDF for this chunk
+        const chunkPdf = await PDFDocument.create();
 
-        try {
-          // Create a new PDF for this chunk
-          const chunkPdf = await PDFDocument.create();
+        // Copy pages for this chunk using global page indices
+        const pageIndices = Array.from({ length: pageCount }, (_, i) => globalStartPage + i);
+        const copiedPages = await chunkPdf.copyPages(sourcePdf, pageIndices);
 
-          // Copy pages for this chunk
-          const pageIndices = Array.from({ length: pageCount }, (_, i) => startPage + i);
-          const copiedPages = await chunkPdf.copyPages(sourcePdf, pageIndices);
+        // Add all copied pages to the chunk PDF
+        copiedPages.forEach(page => chunkPdf.addPage(page));
 
-          // Add all copied pages to the chunk PDF
-          copiedPages.forEach(page => chunkPdf.addPage(page));
+        // Save the chunk (optimized for performance)
+        const chunkBytes = await chunkPdf.save({
+          useObjectStreams: false,
+          addDefaultPage: false,
+          objectsPerTick: 25, // Reduced for less CPU per iteration
+          updateFieldAppearances: false, // Skip field appearance updates
+        });
 
-          // Save the chunk (optimized for performance)
-          const chunkBytes = await chunkPdf.save({
-            useObjectStreams: false,
-            addDefaultPage: false,
-            objectsPerTick: 25, // Reduced for less CPU per iteration
-            updateFieldAppearances: false, // Skip field appearance updates
-          });
+        console.log(`Chunk ${chunkIndex + 1} size: ${chunkBytes.length} bytes`);
 
-          console.log(`Chunk ${chunkIndex + 1} size: ${chunkBytes.length} bytes`);
+        // Upload chunk to storage with retry logic
+        const chunkPath = `${requestData.sessionId}/chunks/chunk_${globalChunkIndex}.pdf`;
+        let uploadSuccess = false;
+        let retryCount = 0;
+        const maxRetries = 3;
 
-          // Upload chunk to storage with retry logic
-          const chunkPath = `${requestData.sessionId}/chunks/chunk_${chunkIndex}.pdf`;
-          let uploadSuccess = false;
-          let retryCount = 0;
-          const maxRetries = 3;
+        while (!uploadSuccess && retryCount < maxRetries) {
+          try {
+            const { error: uploadError } = await supabase.storage
+              .from("pdfs")
+              .upload(chunkPath, chunkBytes, {
+                contentType: "application/pdf",
+                upsert: true
+              });
 
-          while (!uploadSuccess && retryCount < maxRetries) {
-            try {
-              const { error: uploadError } = await supabase.storage
-                .from("pdfs")
-                .upload(chunkPath, chunkBytes, {
-                  contentType: "application/pdf",
-                  upsert: true
-                });
+            if (uploadError) {
+              throw new Error(`Upload error: ${uploadError.message}`);
+            }
 
-              if (uploadError) {
-                throw new Error(`Upload error: ${uploadError.message}`);
-              }
+            uploadSuccess = true;
+            console.log(`✓ Chunk ${chunkIndex + 1} uploaded: ${chunkPath}`);
+          } catch (uploadError) {
+            retryCount++;
+            console.warn(`Upload attempt ${retryCount} failed for chunk ${chunkIndex + 1}:`, uploadError.message);
 
-              uploadSuccess = true;
-              console.log(`✓ Chunk ${chunkIndex + 1} uploaded: ${chunkPath}`);
-            } catch (uploadError) {
-              retryCount++;
-              console.warn(`Upload attempt ${retryCount} failed for chunk ${chunkIndex + 1}:`, uploadError.message);
-
-              if (retryCount < maxRetries) {
-                // Wait before retry
-                await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
-              } else {
-                throw new Error(`Failed to upload chunk ${chunkIndex} after ${maxRetries} attempts: ${uploadError.message}`);
-              }
+            if (retryCount < maxRetries) {
+              // Wait before retry
+              await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+            } else {
+              throw new Error(`Failed to upload chunk ${globalChunkIndex} after ${maxRetries} attempts: ${uploadError.message}`);
             }
           }
-
-          const chunkInfo: ChunkInfo = {
-            chunkIndex,
-            chunkPath,
-            startPage,
-            endPage,
-            pageCount
-          };
-
-          chunks.push(chunkInfo);
-
-        } catch (chunkError) {
-          console.error(`Error creating chunk ${chunkIndex + 1}:`, chunkError);
-          throw new Error(`Failed to create chunk ${chunkIndex + 1}: ${chunkError.message}`);
         }
-      }
 
-      // Brief pause between batches to allow memory cleanup and prevent rate limiting
-      if (batchIndex < batches.length - 1) {
-        console.log(`Batch ${batchIndex + 1} completed. Pausing before next batch...`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        const chunkInfo: ChunkInfo = {
+          chunkIndex: globalChunkIndex, // Use global chunk index
+          chunkPath,
+          startPage: globalStartPage,
+          endPage: globalEndPage,
+          pageCount
+        };
+
+        chunks.push(chunkInfo);
+
+      } catch (chunkError) {
+        console.error(`Error creating chunk ${chunkIndex + 1}:`, chunkError);
+        throw new Error(`Failed to create chunk ${chunkIndex + 1}: ${chunkError.message}`);
       }
     }
 

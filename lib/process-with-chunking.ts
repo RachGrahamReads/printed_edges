@@ -154,36 +154,17 @@ export async function processPDFWithChunking(
     });
     if (pdfError) throw pdfError;
 
-    // Split PDF into single-page chunks
-    const numChunks = Math.ceil(options.numPages / CHUNK_SIZE);
-    console.log(`Processing ${numChunks} single-page chunks...`);
+    // Use progressive chunking for large PDFs to avoid Edge Function timeouts
+    // First, split into intermediate batches, then process each batch into single pages
+    console.log(`Using progressive chunking strategy for ${options.numPages} pages...`);
 
-    // First, chunk the PDF
-    const chunkResponse = await fetch(`${supabaseUrl}/functions/v1/chunk-pdf`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-        'apikey': supabaseAnonKey
-      },
-      body: JSON.stringify({
-        sessionId,
-        pdfPath,
-        totalPages: options.numPages
-      })
-    });
-
-    if (!chunkResponse.ok) {
-      const errorText = await chunkResponse.text();
-      throw new Error(`Failed to chunk PDF: ${chunkResponse.status} - ${errorText}`);
-    }
-
-    const chunkData = await chunkResponse.json();
-    if (!chunkData || !chunkData.chunks) {
-      throw new Error('Failed to chunk PDF: No chunks returned');
-    }
-
-    const chunks = chunkData.chunks;
+    const chunks = await progressiveChunking(
+      supabaseUrl,
+      supabaseAnonKey,
+      sessionId,
+      pdfPath,
+      options.numPages
+    );
     const processedChunkPaths: string[] = new Array(chunks.length); // Pre-allocate to maintain order
 
     // Process chunks in parallel batches for better performance
@@ -520,4 +501,139 @@ async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: s
     clearTimeout(timeoutId);
     throw error;
   }
+}
+
+// Progressive chunking with adaptive sizing and retry logic
+async function progressiveChunking(
+  supabaseUrl: string,
+  supabaseAnonKey: string,
+  sessionId: string,
+  pdfPath: string,
+  totalPages: number
+): Promise<any[]> {
+  // Adaptive batch sizes: try larger first, fall back to smaller if timeout occurs
+  const BATCH_SIZES = [50, 25, 10]; // Try 50 pages, then 25, then 10
+  let currentBatchSizeIndex = 0;
+  let BATCH_SIZE = BATCH_SIZES[currentBatchSizeIndex];
+
+  const allChunks: any[] = [];
+  let currentPage = 0;
+
+  while (currentPage < totalPages) {
+    const batch = {
+      startPage: currentPage,
+      endPage: Math.min(currentPage + BATCH_SIZE - 1, totalPages - 1)
+    };
+    const batchPageCount = batch.endPage - batch.startPage + 1;
+    const batchNumber = Math.floor(currentPage / BATCH_SIZE) + 1;
+    const estimatedTotalBatches = Math.ceil(totalPages / BATCH_SIZE);
+
+    console.log(`Chunking batch ${batchNumber} (pages ${batch.startPage + 1}-${batch.endPage + 1}, batch size: ${BATCH_SIZE})...`);
+
+    let success = false;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    while (!success && retryCount < maxRetries) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout
+
+        const chunkResponse = await fetch(`${supabaseUrl}/functions/v1/chunk-pdf`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseAnonKey}`,
+            'apikey': supabaseAnonKey
+          },
+          body: JSON.stringify({
+            sessionId,
+            pdfPath,
+            startPage: batch.startPage,
+            endPage: batch.endPage,
+            totalPages
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!chunkResponse.ok) {
+          const errorText = await chunkResponse.text();
+          const errorMessage = `${chunkResponse.status} - ${errorText}`;
+
+          // Check if it's a timeout or resource error
+          const isTimeoutError = errorMessage.includes('timeout') ||
+                                errorMessage.includes('504') ||
+                                errorMessage.includes('503') ||
+                                errorMessage.includes('WORKER_LIMIT');
+
+          if (isTimeoutError && currentBatchSizeIndex < BATCH_SIZES.length - 1) {
+            // Timeout with larger batch - reduce batch size and retry
+            currentBatchSizeIndex++;
+            BATCH_SIZE = BATCH_SIZES[currentBatchSizeIndex];
+            console.warn(`⚠️ Batch timed out. Reducing batch size to ${BATCH_SIZE} pages and retrying...`);
+            retryCount = 0; // Reset retry count for new batch size
+            continue;
+          }
+
+          throw new Error(errorMessage);
+        }
+
+        const chunkData = await chunkResponse.json();
+        if (!chunkData || !chunkData.chunks) {
+          throw new Error('No chunks returned');
+        }
+
+        allChunks.push(...chunkData.chunks);
+        console.log(`✓ Batch chunked successfully (${chunkData.chunks.length} pages)`);
+        success = true;
+
+        // Move to next batch
+        currentPage = batch.endPage + 1;
+
+      } catch (error) {
+        retryCount++;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        // Check if error is retryable
+        const isTimeoutError = errorMessage.includes('timeout') ||
+                              errorMessage.includes('504') ||
+                              errorMessage.includes('503') ||
+                              errorMessage.includes('aborted') ||
+                              errorMessage.includes('WORKER_LIMIT') ||
+                              errorMessage.includes('Failed to fetch') ||
+                              errorMessage.includes('NetworkError');
+
+        if (isTimeoutError) {
+          // First, try reducing batch size if we haven't tried smallest yet
+          if (currentBatchSizeIndex < BATCH_SIZES.length - 1) {
+            currentBatchSizeIndex++;
+            BATCH_SIZE = BATCH_SIZES[currentBatchSizeIndex];
+            console.warn(`⚠️ Timeout detected. Reducing batch size to ${BATCH_SIZE} pages...`);
+            retryCount = 0; // Reset retry count for new batch size
+            continue;
+          }
+
+          // Already at smallest batch size, just retry
+          if (retryCount < maxRetries) {
+            const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 8000);
+            console.warn(`⚠️ Batch failed (attempt ${retryCount}/${maxRetries}). Retrying in ${backoffTime}ms...`);
+            await new Promise(resolve => setTimeout(resolve, backoffTime));
+            continue;
+          }
+        }
+
+        // Non-retryable error or max retries reached
+        throw new Error(`Failed to chunk batch (pages ${batch.startPage + 1}-${batch.endPage + 1}) after ${maxRetries} attempts: ${errorMessage}`);
+      }
+    }
+
+    if (!success) {
+      throw new Error(`Failed to chunk batch (pages ${batch.startPage + 1}-${batch.endPage + 1}) after ${maxRetries} attempts`);
+    }
+  }
+
+  console.log(`✓ All ${totalPages} pages successfully chunked into ${allChunks.length} chunks`);
+  return allChunks;
 }
