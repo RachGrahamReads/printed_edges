@@ -144,10 +144,32 @@ serve(async (req) => {
 
         // Copy pages for this chunk using global page indices
         const pageIndices = Array.from({ length: pageCount }, (_, i) => globalStartPage + i);
-        const copiedPages = await chunkPdf.copyPages(sourcePdf, pageIndices);
 
-        // Add all copied pages to the chunk PDF
-        copiedPages.forEach(page => chunkPdf.addPage(page));
+        try {
+          const copiedPages = await chunkPdf.copyPages(sourcePdf, pageIndices);
+          // Add all copied pages to the chunk PDF
+          copiedPages.forEach(page => chunkPdf.addPage(page));
+        } catch (copyError) {
+          // Handle corrupt/blank pages that can't be copied
+          console.warn(`Failed to copy pages ${globalStartPage + 1}-${globalEndPage + 1}, creating blank pages as fallback`);
+          console.warn(`Error:`, copyError.message || String(copyError));
+
+          // Create blank pages for each page that couldn't be copied
+          const sourcePage = sourcePdf.getPage(globalStartPage);
+          const { width, height } = sourcePage.getSize();
+
+          for (let i = 0; i < pageCount; i++) {
+            const blankPage = chunkPdf.addPage([width, height]);
+            // Draw white background
+            blankPage.drawRectangle({
+              x: 0,
+              y: 0,
+              width: width,
+              height: height,
+              color: { type: 'RGB', red: 1, green: 1, blue: 1 }
+            });
+          }
+        }
 
         // Save the chunk (optimized for performance)
         const chunkBytes = await chunkPdf.save({
