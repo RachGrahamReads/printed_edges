@@ -98,15 +98,31 @@ serve(async (req) => {
 
     const chunks: ChunkInfo[] = [];
     const startTime = Date.now();
-    const maxExecutionTime = 80000; // 80 seconds (leave buffer before Edge Function timeout)
+    const maxExecutionTime = 120000; // 120 seconds (2 minutes - increased from 80s)
+    let lastProcessedPage = startPage - 1;
 
     // Create chunks for the specified page range
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-      // Check if we're approaching timeout
+      // Check if we're approaching timeout - if so, return partial results
       const elapsedTime = Date.now() - startTime;
       if (elapsedTime > maxExecutionTime) {
         console.warn(`⚠️ Approaching function timeout after processing ${chunks.length}/${totalChunks} chunks`);
-        throw new Error(`Function timeout: Only processed ${chunks.length} of ${totalChunks} chunks. Try smaller batch size.`);
+        console.log(`Returning partial results. Processed pages ${startPage + 1}-${lastProcessedPage + 1}`);
+
+        // Return partial success with information about what was processed
+        return new Response(
+          JSON.stringify({
+            success: true,
+            partial: true,
+            sessionId: requestData.sessionId,
+            totalChunks: chunks.length,
+            chunks,
+            nextStartPage: lastProcessedPage + 1, // Next page to continue from
+            remainingPages: endPage - lastProcessedPage,
+            message: `Partial chunking: Processed ${chunks.length} chunks (pages ${startPage + 1}-${lastProcessedPage + 1}). Continue from page ${lastProcessedPage + 2}`
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
       // Calculate local page indices within this batch
       const localStartPage = chunkIndex * CHUNK_SIZE;
@@ -186,6 +202,7 @@ serve(async (req) => {
         };
 
         chunks.push(chunkInfo);
+        lastProcessedPage = globalEndPage; // Track the last page we successfully processed
 
       } catch (chunkError) {
         console.error(`Error creating chunk ${chunkIndex + 1}:`, chunkError);

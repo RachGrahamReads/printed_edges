@@ -512,6 +512,7 @@ async function progressiveChunking(
   totalPages: number
 ): Promise<any[]> {
   // Adaptive batch sizes: try larger first, fall back to smaller if timeout occurs
+  // Start with batch of 50, Edge Function will return partial results if it times out
   const BATCH_SIZES = [50, 25, 10]; // Try 50 pages, then 25, then 10
   let currentBatchSizeIndex = 0;
   let BATCH_SIZE = BATCH_SIZES[currentBatchSizeIndex];
@@ -586,11 +587,20 @@ async function progressiveChunking(
         }
 
         allChunks.push(...chunkData.chunks);
-        console.log(`✓ Batch chunked successfully (${chunkData.chunks.length} pages)`);
-        success = true;
 
-        // Move to next batch
-        currentPage = batch.endPage + 1;
+        // Check if this was a partial response (Edge Function timed out)
+        if (chunkData.partial && chunkData.nextStartPage !== undefined) {
+          console.log(`✓ Partial batch completed (${chunkData.chunks.length} pages). Continuing from page ${chunkData.nextStartPage + 1}...`);
+          // Move to the next page after what was processed
+          currentPage = chunkData.nextStartPage;
+          success = true;
+          // Don't reduce batch size - the Edge Function handled it gracefully
+        } else {
+          console.log(`✓ Batch chunked successfully (${chunkData.chunks.length} pages)`);
+          success = true;
+          // Move to next batch
+          currentPage = batch.endPage + 1;
+        }
 
       } catch (error) {
         retryCount++;
