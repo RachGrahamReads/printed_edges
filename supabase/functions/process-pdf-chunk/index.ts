@@ -202,34 +202,28 @@ serve(async (req) => {
         });
         console.log(`Successfully drew page ${pageIndex + 1}`);
       } catch (drawError) {
-        const errorMsg = drawError.message || String(drawError);
-        console.log(`Draw error for page ${pageIndex + 1}:`, errorMsg);
+        // ANY error from embedPage means we should create a blank page fallback
+        // This handles corrupt pages, blank pages, and any other page content issues
+        console.warn(`Page ${pageIndex + 1} (global page ${globalPageIndex + 1}) failed to embed - creating blank page fallback`);
+        console.warn(`Error was:`, drawError.message || String(drawError));
 
-        // Handle blank or corrupt pages by creating a blank page with proper structure
-        if (errorMsg.includes("missing Contents") || errorMsg.includes("Can't embed page")) {
-          console.warn(`Page ${pageIndex + 1} (global page ${globalPageIndex + 1}) has missing/blank content - creating blank page fallback`);
+        // Record this as a warning to inform the user
+        pageWarnings.push({
+          pageNumber: globalPageIndex + 1,
+          issue: "blank_or_corrupt"
+        });
 
-          // Record this as a warning to inform the user
-          pageWarnings.push({
-            pageNumber: globalPageIndex + 1,
-            issue: "blank_or_corrupt"
-          });
+        // Just draw a white rectangle - this creates a proper blank page
+        newPage.drawRectangle({
+          x: 0,
+          y: 0,
+          width: newWidth,
+          height: newHeight,
+          color: rgb(1, 1, 1), // white
+        });
 
-          // Just draw a white rectangle - this creates a proper blank page
-          newPage.drawRectangle({
-            x: 0,
-            y: 0,
-            width: newWidth,
-            height: newHeight,
-            color: rgb(1, 1, 1), // white
-          });
-
-          console.log(`Created blank page for page ${pageIndex + 1} (original page was blank/corrupt)`);
-        } else {
-          // For other errors, still fail
-          console.error(`Error embedding page ${pageIndex + 1}:`, drawError);
-          throw drawError;
-        }
+        console.log(`Created blank page for page ${pageIndex + 1} (original page was blank/corrupt)`);
+        // NOTE: We do NOT throw here - we continue processing with the blank page
       }
 
       // Add edges using pre-sliced images
