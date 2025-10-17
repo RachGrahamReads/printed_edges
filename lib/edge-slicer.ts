@@ -284,73 +284,107 @@ async function createSimplifiedSlices(
   pageType: 'bw' | 'standard' | 'premium' = 'standard',
   edgeType?: 'top' | 'bottom'
 ): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const slices: string[] = [];
+  const maxRetries = 3;
+  let retryCount = 0;
 
-        // The image is already scaled to the correct dimensions
-        // For vertical: width = numLeaves, height = book height in pixels
-        // For horizontal: width = book width in pixels, height = numLeaves
+  while (retryCount < maxRetries) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const img = new Image();
 
-        for (let leafIndex = 0; leafIndex < numLeaves; leafIndex++) {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d')!;
-          ctx.imageSmoothingEnabled = false;
+        // Add timeout for image loading
+        const timeout = setTimeout(() => {
+          reject(new Error('Image loading timeout'));
+        }, 30000); // 30 second timeout
 
-          // Set canvas size for the final edge strip
-          if (orientation === 'vertical') {
-            // For side edges: edge strip width × full page height
-            canvas.width = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
-            canvas.height = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.height, pageType) : img.height;
+        img.onload = () => {
+          clearTimeout(timeout);
+          try {
+            const slices: string[] = [];
 
-            // Extract 1 pixel wide slice from the scaled image
-            const sourceX = Math.min(leafIndex, img.width - 1);
+            // The image is already scaled to the correct dimensions
+            // For vertical: width = numLeaves, height = book height in pixels
+            // For horizontal: width = book width in pixels, height = numLeaves
 
-            // Replicate this slice across the edge strip width
-            for (let x = 0; x < canvas.width; x++) {
-              ctx.drawImage(
-                img,
-                sourceX, 0, 1, img.height,  // Source: 1px wide slice
-                x, 0, 1, canvas.height      // Destination: replicate across width
-              );
+            for (let leafIndex = 0; leafIndex < numLeaves; leafIndex++) {
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d')!;
+              ctx.imageSmoothingEnabled = false;
+
+              // Set canvas size for the final edge strip
+              if (orientation === 'vertical') {
+                // For side edges: edge strip width × full page height
+                canvas.width = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
+                canvas.height = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.height, pageType) : img.height;
+
+                // Extract 1 pixel wide slice from the scaled image
+                const sourceX = Math.min(leafIndex, img.width - 1);
+
+                // Replicate this slice across the edge strip width
+                for (let x = 0; x < canvas.width; x++) {
+                  ctx.drawImage(
+                    img,
+                    sourceX, 0, 1, img.height,  // Source: 1px wide slice
+                    x, 0, 1, canvas.height      // Destination: replicate across width
+                  );
+                }
+              } else {
+                // For top/bottom edges: full page width × edge strip height
+                canvas.width = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.width, pageType) : img.width;
+                canvas.height = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
+
+                // Extract 1 pixel high slice from the scaled image
+                // For top edge: slice from bottom to top (reverse order)
+                // For bottom edge: slice from top to bottom (normal order)
+                const sourceY = edgeType === 'top'
+                  ? Math.min((numLeaves - 1) - leafIndex, img.height - 1)  // Reverse for top
+                  : Math.min(leafIndex, img.height - 1);                   // Normal for bottom
+
+                // Replicate this slice across the edge strip height
+                for (let y = 0; y < canvas.height; y++) {
+                  ctx.drawImage(
+                    img,
+                    0, sourceY, img.width, 1,   // Source: 1px high slice
+                    0, y, canvas.width, 1       // Destination: replicate across height
+                  );
+                }
+              }
+
+              // Convert to base64
+              slices.push(canvas.toDataURL('image/png').split(',')[1]);
             }
-          } else {
-            // For top/bottom edges: full page width × edge strip height
-            canvas.width = pdfDimensions ? pointsToCanvasPixels(pdfDimensions.width, pageType) : img.width;
-            canvas.height = pointsToCanvasPixels(EDGE_STRIP_SIZE, pageType);
 
-            // Extract 1 pixel high slice from the scaled image
-            // For top edge: slice from bottom to top (reverse order)
-            // For bottom edge: slice from top to bottom (normal order)
-            const sourceY = edgeType === 'top'
-              ? Math.min((numLeaves - 1) - leafIndex, img.height - 1)  // Reverse for top
-              : Math.min(leafIndex, img.height - 1);                   // Normal for bottom
-
-            // Replicate this slice across the edge strip height
-            for (let y = 0; y < canvas.height; y++) {
-              ctx.drawImage(
-                img,
-                0, sourceY, img.width, 1,   // Source: 1px high slice
-                0, y, canvas.width, 1       // Destination: replicate across height
-              );
-            }
+            resolve(slices);
+          } catch (error) {
+            clearTimeout(timeout);
+            reject(error);
           }
+        };
 
-          // Convert to base64
-          slices.push(canvas.toDataURL('image/png').split(',')[1]);
-        }
+        img.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('Failed to load scaled image for slicing'));
+        };
 
-        resolve(slices);
-      } catch (error) {
-        reject(error);
+        img.src = `data:image/png;base64,${scaledBase64}`;
+      });
+    } catch (error) {
+      retryCount++;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`Slice creation failed (attempt ${retryCount}/${maxRetries}):`, errorMessage);
+
+      if (retryCount >= maxRetries) {
+        throw new Error(`Failed to create slices after ${maxRetries} attempts: ${errorMessage}`);
       }
-    };
 
-    img.onerror = () => reject(new Error('Failed to load scaled image for slicing'));
-    img.src = `data:image/png;base64,${scaledBase64}`;
-  });
+      // Exponential backoff: 1s, 2s, 4s
+      const backoffTime = Math.min(1000 * Math.pow(2, retryCount - 1), 4000);
+      console.log(`Retrying in ${backoffTime}ms...`);
+      await new Promise(resolve => setTimeout(resolve, backoffTime));
+    }
+  }
+
+  throw new Error('Failed to create slices after all retry attempts');
 }
 
 // NEW: Apply triangle masks to existing slice images
@@ -386,104 +420,138 @@ export async function scaleEdgeImageToBookDimensions(
   },
   scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides'
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
+  const maxRetries = 3;
+  let retryCount = 0;
 
-        // Set target canvas dimensions
-        canvas.width = targetDimensions.width;
-        canvas.height = targetDimensions.height;
+  while (retryCount < maxRetries) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const img = new Image();
 
-        // Clear canvas with transparent background
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.imageSmoothingEnabled = true;
+        // Add timeout for image loading
+        const timeout = setTimeout(() => {
+          reject(new Error('Image scaling timeout'));
+        }, 30000); // 30 second timeout
 
-        let drawX = 0;
-        let drawY = 0;
-        let drawWidth = canvas.width;
-        let drawHeight = canvas.height;
+        img.onload = () => {
+          clearTimeout(timeout);
+          try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d')!;
 
-        switch (scaleMode) {
-          case 'stretch':
-            // Stretch to fill entire canvas (current behavior)
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            break;
+            // Set target canvas dimensions
+            canvas.width = targetDimensions.width;
+            canvas.height = targetDimensions.height;
 
-          case 'fit':
-            // Scale to fit within canvas while maintaining aspect ratio
-            const fitScale = Math.min(canvas.width / img.width, canvas.height / img.height);
-            drawWidth = img.width * fitScale;
-            drawHeight = img.height * fitScale;
-            drawX = (canvas.width - drawWidth) / 2;
-            drawY = (canvas.height - drawHeight) / 2;
-            ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-            break;
+            // Clear canvas with transparent background
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.imageSmoothingEnabled = true;
 
-          case 'fill':
-            // Scale to fill canvas while maintaining aspect ratio (may crop)
-            const fillScale = Math.max(canvas.width / img.width, canvas.height / img.height);
-            drawWidth = img.width * fillScale;
-            drawHeight = img.height * fillScale;
-            drawX = (canvas.width - drawWidth) / 2;
-            drawY = (canvas.height - drawHeight) / 2;
-            ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-            break;
+            let drawX = 0;
+            let drawY = 0;
+            let drawWidth = canvas.width;
+            let drawHeight = canvas.height;
 
-          case 'none':
-            // Use image at original size, centered
-            drawWidth = Math.min(img.width, canvas.width);
-            drawHeight = Math.min(img.height, canvas.height);
-            drawX = (canvas.width - drawWidth) / 2;
-            drawY = (canvas.height - drawHeight) / 2;
+            switch (scaleMode) {
+              case 'stretch':
+                // Stretch to fill entire canvas (current behavior)
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                break;
 
-            // Calculate source coordinates to center-crop the original image
-            const sourceX = (img.width - drawWidth) / 2;
-            const sourceY = (img.height - drawHeight) / 2;
+              case 'fit':
+                // Scale to fit within canvas while maintaining aspect ratio
+                const fitScale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                drawWidth = img.width * fitScale;
+                drawHeight = img.height * fitScale;
+                drawX = (canvas.width - drawWidth) / 2;
+                drawY = (canvas.height - drawHeight) / 2;
+                ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+                break;
 
-            ctx.drawImage(img, sourceX, sourceY, drawWidth, drawHeight, drawX, drawY, drawWidth, drawHeight);
-            break;
+              case 'fill':
+                // Scale to fill canvas while maintaining aspect ratio (may crop)
+                const fillScale = Math.max(canvas.width / img.width, canvas.height / img.height);
+                drawWidth = img.width * fillScale;
+                drawHeight = img.height * fillScale;
+                drawX = (canvas.width - drawWidth) / 2;
+                drawY = (canvas.height - drawHeight) / 2;
+                ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+                break;
 
-          case 'extend-sides':
-            // Apply 'fit' logic first to get centered content
-            const extendFitScale = Math.min(canvas.width / img.width, canvas.height / img.height);
-            const fittedWidth = img.width * extendFitScale;
-            const fittedHeight = img.height * extendFitScale;
-            const fittedX = (canvas.width - fittedWidth) / 2;
-            const fittedY = (canvas.height - fittedHeight) / 2;
+              case 'none':
+                // Use image at original size, centered
+                drawWidth = Math.min(img.width, canvas.width);
+                drawHeight = Math.min(img.height, canvas.height);
+                drawX = (canvas.width - drawWidth) / 2;
+                drawY = (canvas.height - drawHeight) / 2;
 
-            // Draw the fitted content
-            ctx.drawImage(img, fittedX, fittedY, fittedWidth, fittedHeight);
+                // Calculate source coordinates to center-crop the original image
+                const sourceX = (img.width - drawWidth) / 2;
+                const sourceY = (img.height - drawHeight) / 2;
 
-            // Extend edges to fill remaining space
-            if (fittedX > 0) {
-              // Extend left edge
-              ctx.drawImage(img, 0, 0, 1, img.height, 0, fittedY, fittedX, fittedHeight);
-              // Extend right edge
-              ctx.drawImage(img, img.width - 1, 0, 1, img.height, fittedX + fittedWidth, fittedY, canvas.width - fittedX - fittedWidth, fittedHeight);
+                ctx.drawImage(img, sourceX, sourceY, drawWidth, drawHeight, drawX, drawY, drawWidth, drawHeight);
+                break;
+
+              case 'extend-sides':
+                // Apply 'fit' logic first to get centered content
+                const extendFitScale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                const fittedWidth = img.width * extendFitScale;
+                const fittedHeight = img.height * extendFitScale;
+                const fittedX = (canvas.width - fittedWidth) / 2;
+                const fittedY = (canvas.height - fittedHeight) / 2;
+
+                // Draw the fitted content
+                ctx.drawImage(img, fittedX, fittedY, fittedWidth, fittedHeight);
+
+                // Extend edges to fill remaining space
+                if (fittedX > 0) {
+                  // Extend left edge
+                  ctx.drawImage(img, 0, 0, 1, img.height, 0, fittedY, fittedX, fittedHeight);
+                  // Extend right edge
+                  ctx.drawImage(img, img.width - 1, 0, 1, img.height, fittedX + fittedWidth, fittedY, canvas.width - fittedX - fittedWidth, fittedHeight);
+                }
+                if (fittedY > 0) {
+                  // Extend top edge
+                  ctx.drawImage(img, 0, 0, img.width, 1, fittedX, 0, fittedWidth, fittedY);
+                  // Extend bottom edge
+                  ctx.drawImage(img, 0, img.height - 1, img.width, 1, fittedX, fittedY + fittedHeight, fittedWidth, canvas.height - fittedY - fittedHeight);
+                }
+                break;
             }
-            if (fittedY > 0) {
-              // Extend top edge
-              ctx.drawImage(img, 0, 0, img.width, 1, fittedX, 0, fittedWidth, fittedY);
-              // Extend bottom edge
-              ctx.drawImage(img, 0, img.height - 1, img.width, 1, fittedX, fittedY + fittedHeight, fittedWidth, canvas.height - fittedY - fittedHeight);
-            }
-            break;
-        }
 
-        // Convert to base64
-        const scaledBase64 = canvas.toDataURL('image/png').split(',')[1];
-        resolve(scaledBase64);
-      } catch (error) {
-        reject(error);
+            // Convert to base64
+            const scaledBase64 = canvas.toDataURL('image/png').split(',')[1];
+            resolve(scaledBase64);
+          } catch (error) {
+            clearTimeout(timeout);
+            reject(error);
+          }
+        };
+
+        img.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('Failed to load image for scaling'));
+        };
+
+        img.src = `data:image/png;base64,${base64Image}`;
+      });
+    } catch (error) {
+      retryCount++;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`Image scaling failed (attempt ${retryCount}/${maxRetries}):`, errorMessage);
+
+      if (retryCount >= maxRetries) {
+        throw new Error(`Failed to scale image after ${maxRetries} attempts: ${errorMessage}`);
       }
-    };
 
-    img.onerror = () => reject(new Error('Failed to load image for scaling'));
-    img.src = `data:image/png;base64,${base64Image}`;
-  });
+      // Exponential backoff: 1s, 2s, 4s
+      const backoffTime = Math.min(1000 * Math.pow(2, retryCount - 1), 4000);
+      console.log(`Retrying in ${backoffTime}ms...`);
+      await new Promise(resolve => setTimeout(resolve, backoffTime));
+    }
+  }
+
+  throw new Error('Failed to scale image after all retry attempts');
 }
 
 // NEW: Two-stage processing with Supabase storage integration
@@ -734,29 +802,43 @@ export async function createAndStoreDesignMaskedSlices(
     console.log(`Creating masked top slices for design ${designId}...`);
 
     const maskPromises = rawSlicesPaths.top.raw.map(async (rawPath, i) => {
-      const { data: rawSliceData, error: downloadError } = await supabase.storage
-        .from('edge-images')
-        .download(rawPath);
+      let retryCount = 0;
+      const maxRetries = 3;
 
-      if (downloadError) throw new Error(`Failed to download raw top slice ${i}: ${downloadError.message}`);
+      while (retryCount < maxRetries) {
+        try {
+          const { data: rawSliceData, error: downloadError } = await supabase.storage
+            .from('edge-images')
+            .download(rawPath);
 
-      const buffer = await rawSliceData.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      const base64 = btoa(String.fromCharCode(...bytes));
+          if (downloadError) throw new Error(`Download failed: ${downloadError.message}`);
 
-      const maskedBase64 = await applyTriangleMaskToSlice(base64, 'top');
-      const maskedBytes = base64ToUint8Array(maskedBase64);
+          const buffer = await rawSliceData.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          const base64 = btoa(String.fromCharCode(...bytes));
 
-      const maskedPath = `${designBasePath}/slices/masked/top_${i}.png`;
-      const { error: uploadError } = await supabase.storage
-        .from('edge-images')
-        .upload(maskedPath, maskedBytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+          const maskedBase64 = await applyTriangleMaskToSlice(base64, 'top');
+          const maskedBytes = base64ToUint8Array(maskedBase64);
 
-      if (uploadError) throw new Error(`Failed to store masked top slice ${i}: ${uploadError.message}`);
-      return { index: i, path: maskedPath };
+          const maskedPath = `${designBasePath}/slices/masked/top_${i}.png`;
+          const { error: uploadError } = await supabase.storage
+            .from('edge-images')
+            .upload(maskedPath, maskedBytes, {
+              contentType: 'image/png',
+              upsert: true
+            });
+
+          if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+          return { index: i, path: maskedPath };
+        } catch (error) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw new Error(`Failed to download raw top slice ${i} after ${maxRetries} attempts: ${error.message}`);
+          }
+          console.warn(`Retry ${retryCount}/${maxRetries} for top slice ${i}:`, error.message);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
     });
 
     const results = await Promise.all(maskPromises);
@@ -771,29 +853,43 @@ export async function createAndStoreDesignMaskedSlices(
     console.log(`Creating masked bottom slices for design ${designId}...`);
 
     const maskPromises = rawSlicesPaths.bottom.raw.map(async (rawPath, i) => {
-      const { data: rawSliceData, error: downloadError } = await supabase.storage
-        .from('edge-images')
-        .download(rawPath);
+      let retryCount = 0;
+      const maxRetries = 3;
 
-      if (downloadError) throw new Error(`Failed to download raw bottom slice ${i}: ${downloadError.message}`);
+      while (retryCount < maxRetries) {
+        try {
+          const { data: rawSliceData, error: downloadError } = await supabase.storage
+            .from('edge-images')
+            .download(rawPath);
 
-      const buffer = await rawSliceData.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      const base64 = btoa(String.fromCharCode(...bytes));
+          if (downloadError) throw new Error(`Download failed: ${downloadError.message}`);
 
-      const maskedBase64 = await applyTriangleMaskToSlice(base64, 'bottom');
-      const maskedBytes = base64ToUint8Array(maskedBase64);
+          const buffer = await rawSliceData.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          const base64 = btoa(String.fromCharCode(...bytes));
 
-      const maskedPath = `${designBasePath}/slices/masked/bottom_${i}.png`;
-      const { error: uploadError } = await supabase.storage
-        .from('edge-images')
-        .upload(maskedPath, maskedBytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+          const maskedBase64 = await applyTriangleMaskToSlice(base64, 'bottom');
+          const maskedBytes = base64ToUint8Array(maskedBase64);
 
-      if (uploadError) throw new Error(`Failed to store masked bottom slice ${i}: ${uploadError.message}`);
-      return { index: i, path: maskedPath };
+          const maskedPath = `${designBasePath}/slices/masked/bottom_${i}.png`;
+          const { error: uploadError } = await supabase.storage
+            .from('edge-images')
+            .upload(maskedPath, maskedBytes, {
+              contentType: 'image/png',
+              upsert: true
+            });
+
+          if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+          return { index: i, path: maskedPath };
+        } catch (error) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw new Error(`Failed to download raw bottom slice ${i} after ${maxRetries} attempts: ${error.message}`);
+          }
+          console.warn(`Retry ${retryCount}/${maxRetries} for bottom slice ${i}:`, error.message);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
     });
 
     const results = await Promise.all(maskPromises);
@@ -1685,34 +1781,68 @@ async function applyTriangleMaskToSlice(
   rawSliceBase64: string,
   edgeType: 'top' | 'bottom' | 'side'
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        // Create canvas with same dimensions as input image
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
+  const maxRetries = 3;
+  let retryCount = 0;
 
-        canvas.width = img.width;
-        canvas.height = img.height;
+  while (retryCount < maxRetries) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const img = new Image();
 
-        // Draw the original slice image
-        ctx.drawImage(img, 0, 0);
+        // Add timeout for image loading
+        const timeout = setTimeout(() => {
+          reject(new Error('Triangle mask application timeout'));
+        }, 30000); // 30 second timeout
 
-        // Apply triangle mask
-        applyTriangleMask(ctx, canvas.width, canvas.height, edgeType);
+        img.onload = () => {
+          clearTimeout(timeout);
+          try {
+            // Create canvas with same dimensions as input image
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d')!;
 
-        // Convert to base64
-        const maskedBase64 = canvas.toDataURL('image/png').split(',')[1];
-        resolve(maskedBase64);
-      } catch (error) {
-        reject(error);
+            canvas.width = img.width;
+            canvas.height = img.height;
+
+            // Draw the original slice image
+            ctx.drawImage(img, 0, 0);
+
+            // Apply triangle mask
+            applyTriangleMask(ctx, canvas.width, canvas.height, edgeType);
+
+            // Convert to base64
+            const maskedBase64 = canvas.toDataURL('image/png').split(',')[1];
+            resolve(maskedBase64);
+          } catch (error) {
+            clearTimeout(timeout);
+            reject(error);
+          }
+        };
+
+        img.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('Failed to load raw slice image'));
+        };
+
+        img.src = `data:image/png;base64,${rawSliceBase64}`;
+      });
+    } catch (error) {
+      retryCount++;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`Triangle mask application failed (attempt ${retryCount}/${maxRetries}):`, errorMessage);
+
+      if (retryCount >= maxRetries) {
+        throw new Error(`Failed to apply triangle mask after ${maxRetries} attempts: ${errorMessage}`);
       }
-    };
 
-    img.onerror = () => reject(new Error('Failed to load raw slice image'));
-    img.src = `data:image/png;base64,${rawSliceBase64}`;
-  });
+      // Exponential backoff: 1s, 2s, 4s
+      const backoffTime = Math.min(1000 * Math.pow(2, retryCount - 1), 4000);
+      console.log(`Retrying in ${backoffTime}ms...`);
+      await new Promise(resolve => setTimeout(resolve, backoffTime));
+    }
+  }
+
+  throw new Error('Failed to apply triangle mask after all retry attempts');
 }
 
 // Helper function to convert base64 to Uint8Array for storage upload
