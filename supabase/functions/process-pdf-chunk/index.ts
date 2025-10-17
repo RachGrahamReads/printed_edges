@@ -203,6 +203,7 @@ serve(async (req) => {
         console.log(`Successfully drew page ${pageIndex + 1}`);
       } catch (drawError) {
         const errorMsg = drawError.message || String(drawError);
+        console.log(`Draw error for page ${pageIndex + 1}:`, errorMsg);
 
         // Handle blank or corrupt pages by creating a blank page with proper structure
         if (errorMsg.includes("missing Contents") || errorMsg.includes("Can't embed page")) {
