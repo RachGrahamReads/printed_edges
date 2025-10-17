@@ -110,8 +110,8 @@ export default function MockupPage() {
       // Call Edge Function to generate mockup with base64 images
       const { data, error: functionError } = await supabase.functions.invoke('generate-book-mockup', {
         body: {
-          coverImageBase64,
-          edgeDesignBase64,
+          coverImageBase64: coverBase64,
+          edgeDesignBase64: edgeDesignBase64,
           trimWidth,
           trimHeight,
           pageCount,
