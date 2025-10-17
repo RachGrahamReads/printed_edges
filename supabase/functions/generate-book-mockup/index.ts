@@ -650,8 +650,8 @@ serve(async (req) => {
 
           const edgeColor = bilinearSample(edgePixels, edgeWidth, edgeHeight, edgeSrcX, edgeSrcY);
 
-          // Apply edge design at 50% opacity with clean light background
-          const opacity = 0.5;
+          // Apply edge design at 60% opacity with clean light background
+          const opacity = 0.6;
           const destIdx = (y * templateWidth + x) * 4;
 
           // Get existing background color (now clean light paper color)
