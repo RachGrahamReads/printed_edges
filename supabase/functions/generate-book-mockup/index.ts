@@ -576,23 +576,29 @@ serve(async (req) => {
       const coverAspect = coverWidth / coverHeight;
 
       // Calculate how to fit the cover image into the quad
-      // Strategy: Always fit by WIDTH, crop top/bottom if needed
-      // This prevents stretching and maintains the cover's width
+      // Strategy: Fit by WIDTH to avoid horizontal stretching, crop top/bottom
 
-      // Determine crop amounts
       let cropX = 0;  // Amount to crop from left/right (in source image normalized coords)
       let cropY = 0;  // Amount to crop from top/bottom (in source image normalized coords)
 
-      // Always fit by width, crop height
-      const targetHeight = coverAspect / quadAspect;  // What height ratio we need
-      if (targetHeight > 1) {
-        // Image is taller than needed - crop top/bottom
-        cropY = (1 - (1 / targetHeight)) / 2;  // Crop equally from top and bottom
-      }
-      // If targetHeight < 1, image is shorter than quad - it will stretch slightly
-      // But we prioritize avoiding horizontal stretching
+      // Fit by width means we scale the image so its width fills the quad width
+      // If the image height is then taller than the quad, we crop top/bottom
+      // If the image height is shorter, we'll have letterboxing (which is fine)
 
-      console.log('Crop transform:', { coverAspect, quadAspect, cropX, cropY, targetHeight });
+      // The quad expects a certain aspect ratio (quadAspect = width/height)
+      // The cover has coverAspect = width/height
+      // If coverAspect < quadAspect, cover is relatively taller -> crop height
+      // If coverAspect > quadAspect, cover is relatively wider -> would crop width (but we don't want that)
+
+      if (coverAspect < quadAspect) {
+        // Cover is taller relative to quad - crop top/bottom
+        // We want to show the full width, so calculate what portion of height to show
+        const heightRatio = quadAspect / coverAspect;  // < 1
+        cropY = (1 - heightRatio) / 2;  // Crop this much from top and bottom
+      }
+      // If coverAspect >= quadAspect, cover is wider - just fit it (may letterbox)
+
+      console.log('Crop transform:', { coverAspect, quadAspect, cropY });
 
       // For each pixel in the quad region, map to source cover
       const quadMinX = Math.min(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
