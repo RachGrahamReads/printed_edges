@@ -682,8 +682,8 @@ serve(async (req) => {
 
           const edgeColor = bilinearSample(edgePixels, edgeWidth, edgeHeight, edgeSrcX, edgeSrcY);
 
-          // Apply 30% opacity to edge design (70% transparent)
-          const opacity = 0.3;
+          // Apply 50% opacity to edge design (50% transparent)
+          const opacity = 0.5;
           const destIdx = (y * templateWidth + x) * 4;
 
           // Get existing background color
