@@ -442,8 +442,8 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
   console.log(`Starting progressive merge for ${chunkPaths.length} chunks`);
 
-  // Stage 1: Merge chunks into intermediate PDFs (10-15 chunks per intermediate)
-  const INTERMEDIATE_SIZE = 12;
+  // Stage 1: Merge chunks into intermediate PDFs (8-10 chunks per intermediate to reduce memory pressure)
+  const INTERMEDIATE_SIZE = 8; // Reduced from 12 to minimize Edge Function memory usage
   const intermediateGroups = [];
 
   for (let i = 0; i < chunkPaths.length; i += INTERMEDIATE_SIZE) {
@@ -455,7 +455,7 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
   const intermediatePaths: string[] = [];
 
   // Process intermediate groups in batches to avoid overwhelming the system
-  const BATCH_SIZE = 5;
+  const BATCH_SIZE = 3; // Reduced from 5 to minimize concurrent Edge Function load
   for (let batchStart = 0; batchStart < intermediateGroups.length; batchStart += BATCH_SIZE) {
     const batchEnd = Math.min(batchStart + BATCH_SIZE, intermediateGroups.length);
     const batchPromises = [];
@@ -476,11 +476,11 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
   }
 
   // Stage 2: If we have many intermediate PDFs, create another level
-  if (intermediatePaths.length > 15) {
+  if (intermediatePaths.length > 12) { // Reduced threshold from 15 to 12
     console.log(`Stage 2: Merging ${intermediatePaths.length} intermediate PDFs into final groups`);
 
     const stage2Groups = [];
-    const STAGE2_SIZE = 10;
+    const STAGE2_SIZE = 8; // Reduced from 10 to minimize memory pressure
 
     for (let i = 0; i < intermediatePaths.length; i += STAGE2_SIZE) {
       stage2Groups.push(intermediatePaths.slice(i, i + STAGE2_SIZE));
@@ -496,13 +496,50 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
       stage2Paths.push(result);
     }
 
+    // Clean up Stage 1 intermediate files - no longer needed
+    console.log(`Cleaning up ${intermediatePaths.length} Stage 1 intermediate files...`);
+    try {
+      await supabase.storage
+        .from('processed-pdfs')
+        .remove(intermediatePaths);
+      console.log('✓ Stage 1 files cleaned up');
+    } catch (cleanupError) {
+      console.warn('Failed to cleanup Stage 1 files:', cleanupError);
+    }
+
     // Final stage: Merge stage2 results
     console.log(`Final stage: Merging ${stage2Paths.length} stage2 PDFs into final PDF`);
-    return await mergeGroup(stage2Paths, finalOutputPath, sessionId, 1, 1);
+    const finalPath = await mergeGroup(stage2Paths, finalOutputPath, sessionId, 1, 1);
+
+    // Clean up Stage 2 intermediate files - no longer needed
+    console.log(`Cleaning up ${stage2Paths.length} Stage 2 intermediate files...`);
+    try {
+      await supabase.storage
+        .from('processed-pdfs')
+        .remove(stage2Paths);
+      console.log('✓ Stage 2 files cleaned up');
+    } catch (cleanupError) {
+      console.warn('Failed to cleanup Stage 2 files:', cleanupError);
+    }
+
+    return finalPath;
   } else {
     // Final stage: Merge intermediate PDFs directly
     console.log(`Final stage: Merging ${intermediatePaths.length} intermediate PDFs into final PDF`);
-    return await mergeGroup(intermediatePaths, finalOutputPath, sessionId, 1, 1);
+    const finalPath = await mergeGroup(intermediatePaths, finalOutputPath, sessionId, 1, 1);
+
+    // Clean up Stage 1 intermediate files - no longer needed
+    console.log(`Cleaning up ${intermediatePaths.length} Stage 1 intermediate files...`);
+    try {
+      await supabase.storage
+        .from('processed-pdfs')
+        .remove(intermediatePaths);
+      console.log('✓ Stage 1 files cleaned up');
+    } catch (cleanupError) {
+      console.warn('Failed to cleanup Stage 1 files:', cleanupError);
+    }
+
+    return finalPath;
   }
 }
 

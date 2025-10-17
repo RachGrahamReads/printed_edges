@@ -79,7 +79,7 @@ serve(async (req) => {
     let totalPages = 0;
 
     // Process chunks in batches to reduce memory usage
-    const BATCH_SIZE = 5; // Process 5 chunks at a time
+    const BATCH_SIZE = 3; // Process 3 chunks at a time to minimize memory pressure
     const batches = [];
     for (let i = 0; i < requestData.totalChunks; i += BATCH_SIZE) {
       batches.push({
@@ -125,25 +125,35 @@ serve(async (req) => {
         }
 
         const chunkBytes = await chunkData.arrayBuffer();
-        const chunkPdf = await PDFDocument.load(chunkBytes);
 
-        const pageCount = chunkPdf.getPageCount();
-        console.log(`Chunk ${chunkIndex + 1} has ${pageCount} pages`);
+        // Load PDF in a scoped block to allow garbage collection
+        let pageCount: number;
+        {
+          const chunkPdf = await PDFDocument.load(chunkBytes);
+          pageCount = chunkPdf.getPageCount();
+          console.log(`Chunk ${chunkIndex + 1} has ${pageCount} pages`);
 
-        // Copy all pages from this chunk to the merged PDF
-        const pageIndices = Array.from({ length: pageCount }, (_, i) => i);
-        const copiedPages = await mergedPdf.copyPages(chunkPdf, pageIndices);
+          // Copy all pages from this chunk to the merged PDF
+          const pageIndices = Array.from({ length: pageCount }, (_, i) => i);
+          const copiedPages = await mergedPdf.copyPages(chunkPdf, pageIndices);
 
-        // Add all copied pages to the merged PDF
-        copiedPages.forEach(page => mergedPdf.addPage(page));
+          // Add all copied pages to the merged PDF
+          copiedPages.forEach(page => mergedPdf.addPage(page));
+        }
+        // chunkPdf is now out of scope and can be garbage collected
 
         totalPages += pageCount;
         console.log(`Added ${pageCount} pages from chunk ${chunkIndex + 1}. Total pages so far: ${totalPages}`);
+
+        // Force garbage collection hint after each chunk
+        if ((globalThis as any).gc) {
+          (globalThis as any).gc();
+        }
       }
 
       // Brief pause between batches to allow memory cleanup
       if (batchIndex < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
 
