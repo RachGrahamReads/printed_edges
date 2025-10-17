@@ -617,9 +617,13 @@ serve(async (req) => {
     renderBookShadow(outputPixels, quad, pageEdgeQuad, templateWidth, templateHeight);
     console.log('Shadow rendering complete');
 
-    // Render page edge - either with edge design or default cream color
+    // Render page edge - always render clean paper base first, then edge design if provided
+    console.log('Rendering clean paper base for page edge...');
+    renderDefaultPageEdge(outputPixels, pageEdgeQuad, templateWidth, templateHeight);
+    console.log('Paper base rendering complete');
+
     if (edgeDesignImg) {
-      console.log('Rendering custom edge design to page edge...');
+      console.log('Rendering custom edge design on top of paper base...');
 
       // Apply edge design to page edge area
       const edgePixels = edgeDesignImg.bitmap;
@@ -665,9 +669,7 @@ serve(async (req) => {
 
       console.log('Custom edge design rendering complete');
     } else {
-      console.log('No edge design provided, rendering default cream page edge...');
-      renderDefaultPageEdge(outputPixels, pageEdgeQuad, templateWidth, templateHeight);
-      console.log('Default page edge rendering complete');
+      console.log('No edge design provided, using paper base only');
     }
 
     console.log('Encoding PNG...');
