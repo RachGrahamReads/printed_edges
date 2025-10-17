@@ -148,6 +148,9 @@ serve(async (req) => {
     // Pre-load all slice images to avoid repeated downloads
     const loadedSlices: any = {};
 
+    // Track pages with issues
+    const pageWarnings: Array<{ pageNumber: number; issue: string }> = [];
+
     for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
       const globalPageIndex = requestData.startPage + pageIndex;
       const leafNumber = Math.floor(globalPageIndex / 2);
@@ -187,7 +190,7 @@ serve(async (req) => {
         // Even pages (right side): xOffset = 0, content at left, bleed extends right
       }
 
-      // Copy the page contents using embedPage instead of drawPage
+      // Copy the page contents using embedPage
       try {
         const embeddedPage = await processedDoc.embedPage(sourcePage);
 
@@ -199,8 +202,33 @@ serve(async (req) => {
         });
         console.log(`Successfully drew page ${pageIndex + 1}`);
       } catch (drawError) {
-        console.error(`Error drawing page ${pageIndex + 1}:`, drawError);
-        throw drawError;
+        const errorMsg = drawError.message || String(drawError);
+
+        // Handle blank or corrupt pages by creating a blank page with proper structure
+        if (errorMsg.includes("missing Contents") || errorMsg.includes("Can't embed page")) {
+          console.warn(`Page ${pageIndex + 1} (global page ${globalPageIndex + 1}) has missing/blank content - creating blank page fallback`);
+
+          // Record this as a warning to inform the user
+          pageWarnings.push({
+            pageNumber: globalPageIndex + 1,
+            issue: "blank_or_corrupt"
+          });
+
+          // Just draw a white rectangle - this creates a proper blank page
+          newPage.drawRectangle({
+            x: 0,
+            y: 0,
+            width: newWidth,
+            height: newHeight,
+            color: rgb(1, 1, 1), // white
+          });
+
+          console.log(`Created blank page for page ${pageIndex + 1} (original page was blank/corrupt)`);
+        } else {
+          // For other errors, still fail
+          console.error(`Error embedding page ${pageIndex + 1}:`, drawError);
+          throw drawError;
+        }
       }
 
       // Add edges using pre-sliced images
@@ -259,24 +287,38 @@ serve(async (req) => {
 
     console.log(`Processed chunk size: ${processedBytes.length} bytes`);
 
-    // Upload processed chunk
+    // Upload processed chunk with retry logic
     const processedChunkPath = `${requestData.sessionId}/processed_chunks/chunk_${requestData.chunkIndex}.pdf`;
-    const { error: uploadError } = await supabase.storage
-      .from("processed-pdfs")
-      .upload(processedChunkPath, processedBytes, {
-        contentType: "application/pdf",
-        upsert: true
-      });
+    await retryWithBackoff(
+      async () => {
+        const { error: uploadError } = await supabase.storage
+          .from("processed-pdfs")
+          .upload(processedChunkPath, processedBytes, {
+            contentType: "application/pdf",
+            upsert: true
+          });
 
-    if (uploadError) throw new Error(`Failed to upload processed chunk: ${uploadError.message}`);
+        if (uploadError) {
+          throw new Error(uploadError.message || JSON.stringify(uploadError));
+        }
+      },
+      3, // max 3 retries
+      1000, // start with 1 second delay
+      `Upload processed chunk ${requestData.chunkIndex + 1}/${requestData.totalChunks}`
+    );
 
     console.log(`Processed chunk uploaded: ${processedChunkPath}`);
+
+    if (pageWarnings.length > 0) {
+      console.warn(`Chunk ${requestData.chunkIndex + 1} has ${pageWarnings.length} page(s) with issues:`, pageWarnings);
+    }
 
     return new Response(
       JSON.stringify({
         success: true,
         chunkIndex: requestData.chunkIndex,
         processedChunkPath,
+        pageWarnings: pageWarnings.length > 0 ? pageWarnings : undefined,
         message: `Chunk ${requestData.chunkIndex + 1}/${requestData.totalChunks} processed successfully`
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

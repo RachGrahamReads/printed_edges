@@ -663,15 +663,29 @@ export async function createAndStoreDesignSlices(
       const path = `${designBasePath}/slices/raw/side_${i}.png`;
       const bytes = base64ToUint8Array(slice);
 
-      const { error } = await supabase.storage
-        .from('edge-images')
-        .upload(path, bytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+      let retryCount = 0;
+      const maxRetries = 3;
 
-      if (error) throw new Error(`Failed to store side slice ${i}: ${error.message}`);
-      return { index: i, path };
+      while (retryCount < maxRetries) {
+        try {
+          const { error } = await supabase.storage
+            .from('edge-images')
+            .upload(path, bytes, {
+              contentType: 'image/png',
+              upsert: true
+            });
+
+          if (error) throw new Error(`Upload failed: ${error.message}`);
+          return { index: i, path };
+        } catch (uploadError) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw new Error(`Failed to store side slice ${i} after ${maxRetries} attempts: ${uploadError.message}`);
+          }
+          console.warn(`Retry ${retryCount}/${maxRetries} for design side slice ${i}`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
     });
 
     const results = await Promise.all(uploadPromises);
@@ -688,15 +702,29 @@ export async function createAndStoreDesignSlices(
       const path = `${designBasePath}/slices/raw/top_${i}.png`;
       const bytes = base64ToUint8Array(slice);
 
-      const { error } = await supabase.storage
-        .from('edge-images')
-        .upload(path, bytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+      let retryCount = 0;
+      const maxRetries = 3;
 
-      if (error) throw new Error(`Failed to store top slice ${i}: ${error.message}`);
-      return { index: i, path };
+      while (retryCount < maxRetries) {
+        try {
+          const { error } = await supabase.storage
+            .from('edge-images')
+            .upload(path, bytes, {
+              contentType: 'image/png',
+              upsert: true
+            });
+
+          if (error) throw new Error(`Upload failed: ${error.message}`);
+          return { index: i, path };
+        } catch (uploadError) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw new Error(`Failed to store top slice ${i} after ${maxRetries} attempts: ${uploadError.message}`);
+          }
+          console.warn(`Retry ${retryCount}/${maxRetries} for design top slice ${i}`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
     });
 
     const results = await Promise.all(uploadPromises);
@@ -713,15 +741,29 @@ export async function createAndStoreDesignSlices(
       const path = `${designBasePath}/slices/raw/bottom_${i}.png`;
       const bytes = base64ToUint8Array(slice);
 
-      const { error } = await supabase.storage
-        .from('edge-images')
-        .upload(path, bytes, {
-          contentType: 'image/png',
-          upsert: true
-        });
+      let retryCount = 0;
+      const maxRetries = 3;
 
-      if (error) throw new Error(`Failed to store bottom slice ${i}: ${error.message}`);
-      return { index: i, path };
+      while (retryCount < maxRetries) {
+        try {
+          const { error } = await supabase.storage
+            .from('edge-images')
+            .upload(path, bytes, {
+              contentType: 'image/png',
+              upsert: true
+            });
+
+          if (error) throw new Error(`Upload failed: ${error.message}`);
+          return { index: i, path };
+        } catch (uploadError) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            throw new Error(`Failed to store bottom slice ${i} after ${maxRetries} attempts: ${uploadError.message}`);
+          }
+          console.warn(`Retry ${retryCount}/${maxRetries} for design bottom slice ${i}`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
     });
 
     const results = await Promise.all(uploadPromises);

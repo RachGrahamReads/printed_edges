@@ -159,15 +159,24 @@ serve(async (req) => {
 
     console.log(`Merged PDF size: ${mergedBytes.length} bytes`);
 
-    // Upload the final merged PDF
-    const { error: uploadError } = await supabase.storage
-      .from("processed-pdfs")
-      .upload(requestData.outputPath, mergedBytes, {
-        contentType: "application/pdf",
-        upsert: true
-      });
+    // Upload the final merged PDF with retry logic
+    await retryWithBackoff(
+      async () => {
+        const { error: uploadError } = await supabase.storage
+          .from("processed-pdfs")
+          .upload(requestData.outputPath, mergedBytes, {
+            contentType: "application/pdf",
+            upsert: true
+          });
 
-    if (uploadError) throw new Error(`Failed to upload merged PDF: ${uploadError.message}`);
+        if (uploadError) {
+          throw new Error(uploadError.message || JSON.stringify(uploadError));
+        }
+      },
+      3, // max 3 retries
+      1000, // start with 1 second delay
+      "Upload merged PDF"
+    );
 
     console.log(`Final merged PDF uploaded: ${requestData.outputPath}`);
 

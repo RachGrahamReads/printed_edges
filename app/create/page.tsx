@@ -60,6 +60,7 @@ export default function CreatePage() {
   const [processingStep, setProcessingStep] = useState('');
   const [processedPdfUrl, setProcessedPdfUrl] = useState<string | null>(null);
   const [processingError, setProcessingError] = useState<string | null>(null);
+  const [pageWarnings, setPageWarnings] = useState<Array<{ pageNumber: number; issue: string }>>([]);
   const [canvasReady, setCanvasReady] = useState(false);
   const [isSavingDesign, setIsSavingDesign] = useState(false);
   const [savedDesignName, setSavedDesignName] = useState<string | null>(null);
@@ -1017,6 +1018,7 @@ export default function CreatePage() {
       setProcessingStep('Preparing files...');
       setProcessingError(null);
       setProcessedPdfUrl(null);
+      setPageWarnings([]);
 
       // Prepare edge data (always all-edges mode)
       const edgeData: any = {};
@@ -1060,7 +1062,8 @@ export default function CreatePage() {
         },
         designId,
         user?.id,
-        (progress) => setProcessingProgress(progress)
+        (progress) => setProcessingProgress(progress),
+        (warnings) => setPageWarnings(warnings)
       );
 
       setProcessingStep('Complete!');
@@ -1599,6 +1602,33 @@ export default function CreatePage() {
                           Download PDF
                         </a>
                       </div>
+
+                      {/* Page Warnings */}
+                      {pageWarnings.length > 0 && (
+                        <div className="border border-amber-300 bg-amber-50 p-3 rounded">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-amber-900 mb-1">
+                                Page Content Warning
+                              </p>
+                              <p className="text-sm text-amber-800 mb-2">
+                                The following page(s) in your PDF had missing or corrupt content and have been rendered as blank pages with edges:
+                              </p>
+                              <ul className="text-sm text-amber-800 list-disc list-inside space-y-1 mb-2">
+                                {pageWarnings.map((warning, idx) => (
+                                  <li key={idx}>
+                                    Page {warning.pageNumber}
+                                  </li>
+                                ))}
+                              </ul>
+                              <p className="text-sm text-amber-900 font-medium">
+                                Please check these pages in your downloaded PDF to ensure this is acceptable. If the original pages were not intentionally blank, please repair your PDF and try again. If you need help, please <a href="mailto:support@printededges.com" className="underline font-semibold hover:text-amber-950">contact us</a>.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Auto-Save Notification */}
                       {user && (isSavingDesign || savedDesignName) && (

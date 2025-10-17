@@ -28,7 +28,8 @@ export async function processPDFWithChunking(
   },
   designId?: string,
   userId?: string,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  onPageWarning?: (warnings: Array<{ pageNumber: number; issue: string }>) => void
 ) {
   if (!supabase) {
     throw new Error('Supabase client not initialized');
@@ -145,14 +146,30 @@ export async function processPDFWithChunking(
 
     console.log(`Created masked slices - Side: ${maskedSlicesPaths.side?.masked.length || 0}, Top: ${maskedSlicesPaths.top?.masked.length || 0}, Bottom: ${maskedSlicesPaths.bottom?.masked.length || 0}`);
 
-    // Upload PDF
+    // Upload PDF with retry logic
     console.log('Uploading PDF...');
     const pdfPath = `${sessionId}/original.pdf`;
-    const { error: pdfError } = await supabase.storage.from('pdfs').upload(pdfPath, pdfFile, {
-      contentType: 'application/pdf',
-      upsert: true
-    });
-    if (pdfError) throw pdfError;
+    let uploadRetryCount = 0;
+    const maxUploadRetries = 3;
+    let pdfUploaded = false;
+
+    while (!pdfUploaded && uploadRetryCount < maxUploadRetries) {
+      const { error: pdfError } = await supabase.storage.from('pdfs').upload(pdfPath, pdfFile, {
+        contentType: 'application/pdf',
+        upsert: true
+      });
+
+      if (pdfError) {
+        uploadRetryCount++;
+        if (uploadRetryCount >= maxUploadRetries) {
+          throw new Error(`Failed to upload PDF after ${maxUploadRetries} attempts: ${pdfError.message}`);
+        }
+        console.warn(`PDF upload failed (attempt ${uploadRetryCount}/${maxUploadRetries}), retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * uploadRetryCount));
+      } else {
+        pdfUploaded = true;
+      }
+    }
 
     // Use progressive chunking for large PDFs to avoid Edge Function timeouts
     // First, split into intermediate batches, then process each batch into single pages
@@ -166,6 +183,7 @@ export async function processPDFWithChunking(
       options.numPages
     );
     const processedChunkPaths: string[] = new Array(chunks.length); // Pre-allocate to maintain order
+    const allPageWarnings: Array<{ pageNumber: number; issue: string }> = [];
 
     // Process chunks in parallel batches for better performance
     const BATCH_SIZE = 8; // Process 8 single pages concurrently
@@ -245,6 +263,12 @@ export async function processPDFWithChunking(
             const data = await processResponse.json();
             // Store result in correct order
             processedChunkPaths[chunkIndex] = data.processedChunkPath;
+
+            // Collect any page warnings
+            if (data.pageWarnings && data.pageWarnings.length > 0) {
+              allPageWarnings.push(...data.pageWarnings);
+            }
+
             success = true;
             console.log(`✓ Page ${chunk.startPage + 1} processed successfully`);
 
@@ -286,6 +310,12 @@ export async function processPDFWithChunking(
       }
 
       console.log(`✓ Batch ${batchIndex + 1}/${batches.length} completed (${completedChunks}/${chunks.length} pages)`);
+    }
+
+    // Notify caller of any page warnings
+    if (allPageWarnings.length > 0 && onPageWarning) {
+      console.warn(`Found ${allPageWarnings.length} page(s) with issues:`, allPageWarnings);
+      onPageWarning(allPageWarnings);
     }
 
     console.log('Merging processed chunks...');
@@ -330,12 +360,29 @@ export async function processPDFWithChunking(
       finalPdfPath = outputPath;
     }
 
-    // Download the final PDF
-    const { data: finalPdf, error: downloadError } = await supabase.storage
-      .from('processed-pdfs')
-      .download(finalPdfPath);
+    // Download the final PDF with retry logic
+    let downloadRetryCount = 0;
+    const maxDownloadRetries = 3;
+    let finalPdf: Blob | null = null;
 
-    if (downloadError) throw downloadError;
+    while (!finalPdf && downloadRetryCount < maxDownloadRetries) {
+      const { data, error: downloadError } = await supabase.storage
+        .from('processed-pdfs')
+        .download(finalPdfPath);
+
+      if (downloadError) {
+        downloadRetryCount++;
+        if (downloadRetryCount >= maxDownloadRetries) {
+          throw new Error(`Failed to download final PDF after ${maxDownloadRetries} attempts: ${downloadError.message}`);
+        }
+        console.warn(`PDF download failed (attempt ${downloadRetryCount}/${maxDownloadRetries}), retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * downloadRetryCount));
+      } else {
+        finalPdf = data;
+      }
+    }
+
+    if (!finalPdf) throw new Error('Failed to download final PDF');
 
     const pdfBuffer = await finalPdf.arrayBuffer();
 
