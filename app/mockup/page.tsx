@@ -72,27 +72,25 @@ export default function MockupPage() {
 
   // Generate mockup
   const handleGenerateMockup = async () => {
-    if (!coverFile) {
-      setError("Please upload a cover image");
-      return;
-    }
-
     setIsProcessing(true);
     setError(null);
 
     try {
-      // Convert cover file to base64
-      const coverBase64 = await new Promise<string>((resolve, reject) => {
-        const fileReader = new FileReader();
-        fileReader.onload = () => {
-          const result = fileReader.result as string;
-          // Extract base64 part (remove data:image/...;base64, prefix)
-          const base64 = result.split(',')[1];
-          resolve(base64);
-        };
-        fileReader.onerror = reject;
-        fileReader.readAsDataURL(coverFile);
-      });
+      // Convert cover file to base64 if provided
+      let coverBase64: string | undefined;
+      if (coverFile) {
+        coverBase64 = await new Promise<string>((resolve, reject) => {
+          const fileReader = new FileReader();
+          fileReader.onload = () => {
+            const result = fileReader.result as string;
+            // Extract base64 part (remove data:image/...;base64, prefix)
+            const base64 = result.split(',')[1];
+            resolve(base64);
+          };
+          fileReader.onerror = reject;
+          fileReader.readAsDataURL(coverFile);
+        });
+      }
 
       // Convert edge design file to base64 if provided
       let edgeDesignBase64: string | undefined;
@@ -112,7 +110,7 @@ export default function MockupPage() {
       // Call Edge Function to generate mockup with base64 images
       const { data, error: functionError } = await supabase.functions.invoke('generate-book-mockup', {
         body: {
-          coverImageBase64: coverBase64,
+          coverImageBase64,
           edgeDesignBase64,
           trimWidth,
           trimHeight,
@@ -177,7 +175,7 @@ export default function MockupPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="cover-upload">Book Cover Image *</Label>
+                  <Label htmlFor="cover-upload">Book Cover Image (Optional)</Label>
                   <Input
                     id="cover-upload"
                     type="file"
@@ -186,13 +184,16 @@ export default function MockupPage() {
                     className="mt-2"
                     disabled={isProcessing}
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    If no cover is uploaded, the mockup will show the template only
+                  </p>
                   {coverPreview && (
                     <div className="mt-4">
                       <p className="text-sm text-green-600 mb-2">✓ Cover uploaded</p>
                       <img
                         src={coverPreview}
                         alt="Cover preview"
-                        className="w-full max-w-xs rounded-lg border shadow-sm"
+                        className="max-h-[150px] w-auto rounded-lg border shadow-sm"
                       />
                     </div>
                   )}
@@ -217,7 +218,7 @@ export default function MockupPage() {
                       <img
                         src={edgeDesignPreview}
                         alt="Edge design preview"
-                        className="w-full max-w-xs rounded-lg border shadow-sm"
+                        className="max-h-[150px] w-auto rounded-lg border shadow-sm"
                       />
                     </div>
                   )}
@@ -322,7 +323,7 @@ export default function MockupPage() {
                 <Button
                   className="w-full"
                   size="lg"
-                  disabled={!coverFile || isProcessing}
+                  disabled={isProcessing}
                   onClick={handleGenerateMockup}
                 >
                   {isProcessing ? (
@@ -349,7 +350,7 @@ export default function MockupPage() {
                 <CardTitle>How It Works</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>1. Upload your book cover image (required)</p>
+                <p>1. Optionally upload your book cover image (or use the template)</p>
                 <p>2. Optionally upload an edge design to preview on the page edges</p>
                 <p>3. Set your book dimensions and page count for accurate edge thickness</p>
                 <p>4. Click "Generate 3D Mockup" to create your mockup</p>

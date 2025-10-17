@@ -379,8 +379,8 @@ serve(async (req) => {
 
     console.log('Generating mockup...', { trimWidth, trimHeight, pageCount });
 
-    // Get cover image data
-    let coverBuffer: ArrayBuffer;
+    // Get cover image data (optional now)
+    let coverBuffer: ArrayBuffer | null = null;
 
     if (coverImageBase64) {
       // Decode base64 image
@@ -403,7 +403,7 @@ serve(async (req) => {
       }
       coverBuffer = await coverData.arrayBuffer();
     } else {
-      throw new Error('No cover image provided (need either coverImageBase64 or coverImagePath)');
+      console.log('No cover image provided, will use template only');
     }
 
     // Download template image (cover-only template)
@@ -419,6 +419,7 @@ serve(async (req) => {
       console.log('Template not found in storage, trying localhost...');
       // Try common Next.js ports
       const localhostUrls = [
+        'http://host.docker.internal:3006/book-mockup-cover-template.png',
         'http://host.docker.internal:3001/book-mockup-cover-template.png',
         'http://host.docker.internal:3005/book-mockup-cover-template.png',
         'http://host.docker.internal:3000/book-mockup-cover-template.png'
@@ -441,22 +442,35 @@ serve(async (req) => {
       if (!templateResponse.ok) {
         // Fallback 2: Try production URL
         console.log('Localhost failed, trying production URL...');
-        const prodUrl = 'https://printededges.com/book-mockup-cover-template.png';
-        templateResponse = await fetch(prodUrl);
+        const prodUrls = [
+          'https://printededges.com/book-mockup-cover-template.png',
+          'https://www.printededges.com/book-mockup-cover-template.png'
+        ];
+
+        for (const prodUrl of prodUrls) {
+          templateResponse = await fetch(prodUrl);
+          if (templateResponse.ok) {
+            console.log('Template found at:', prodUrl);
+            break;
+          }
+        }
 
         if (!templateResponse.ok) {
-          throw new Error(`Failed to fetch cover template from storage, localhost, and production: ${templateResponse.status}`);
+          throw new Error(`Failed to fetch cover template from storage, localhost, and production. Please ensure the template file exists at /public/book-mockup-cover-template.png`);
         }
       }
     }
     templateData = await templateResponse.arrayBuffer();
 
     // Load images using imagescript
-    const coverImg = await Image.decode(new Uint8Array(coverBuffer));
     const templateImg = await Image.decode(new Uint8Array(templateData));
-
     console.log('Template size:', templateImg.width, 'x', templateImg.height);
-    console.log('Cover size:', coverImg.width, 'x', coverImg.height);
+
+    let coverImg: Image | null = null;
+    if (coverBuffer) {
+      coverImg = await Image.decode(new Uint8Array(coverBuffer));
+      console.log('Cover size:', coverImg.width, 'x', coverImg.height);
+    }
 
     // Load edge design image if provided
     let edgeDesignImg: Image | null = null;
@@ -545,80 +559,84 @@ serve(async (req) => {
     // Create output image (clone template)
     const outputImg = new Image(templateWidth, templateHeight);
     outputImg.bitmap.set(templateImg.bitmap);
-
-    // Apply perspective warp: map cover image to quad
-    const coverPixels = coverImg.bitmap;
-    const coverWidth = coverImg.width;
-    const coverHeight = coverImg.height;
     const outputPixels = outputImg.bitmap;
 
-    console.log('Applying perspective warp...');
+    // Apply perspective warp: map cover image to quad (if cover provided)
+    if (coverImg) {
+      const coverPixels = coverImg.bitmap;
+      const coverWidth = coverImg.width;
+      const coverHeight = coverImg.height;
 
-    // Calculate the aspect ratio of the quad and cover
-    const quadWidth = Math.max(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]) - Math.min(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
-    const quadHeight = Math.max(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]) - Math.min(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
-    const quadAspect = quadWidth / quadHeight;
-    const coverAspect = coverWidth / coverHeight;
+      console.log('Applying perspective warp...');
 
-    // Calculate how to fit the cover image into the quad using "cover" fit
-    // (fill the entire quad, cropping the excess)
+      // Calculate the aspect ratio of the quad and cover
+      const quadWidth = Math.max(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]) - Math.min(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
+      const quadHeight = Math.max(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]) - Math.min(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
+      const quadAspect = quadWidth / quadHeight;
+      const coverAspect = coverWidth / coverHeight;
 
-    // Determine crop amounts
-    let cropX = 0;  // Amount to crop from left/right (in source image normalized coords)
-    let cropY = 0;  // Amount to crop from top/bottom (in source image normalized coords)
+      // Calculate how to fit the cover image into the quad using "cover" fit
+      // (fill the entire quad, cropping the excess)
 
-    if (coverAspect > quadAspect) {
-      // Cover is WIDER than quad - fit by HEIGHT, crop WIDTH
-      // Calculate how much width to crop
-      const targetWidth = quadAspect / coverAspect;  // What width ratio we need
-      cropX = (1 - targetWidth) / 2;  // Crop equally from both sides
-    } else {
-      // Cover is TALLER than quad - fit by WIDTH, crop HEIGHT
-      // Calculate how much height to crop
-      const targetHeight = coverAspect / quadAspect;  // What height ratio we need
-      cropY = (1 - targetHeight) / 2;  // Crop equally from top and bottom
-    }
+      // Determine crop amounts
+      let cropX = 0;  // Amount to crop from left/right (in source image normalized coords)
+      let cropY = 0;  // Amount to crop from top/bottom (in source image normalized coords)
 
-    console.log('Crop transform:', { coverAspect, quadAspect, cropX, cropY });
-
-    // For each pixel in the quad region, map to source cover
-    const quadMinX = Math.min(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
-    const quadMaxX = Math.max(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
-    const quadMinY = Math.min(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
-    const quadMaxY = Math.max(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
-
-    for (let y = quadMinY; y <= quadMaxY; y++) {
-      for (let x = quadMinX; x <= quadMaxX; x++) {
-        if (!isPointInQuad(x, y, quad)) continue;
-
-        const uv = quadToUV(x, y, quad);
-        if (!uv) continue;
-
-        // Map UV [0,1] to the cropped region of the source image
-        let [u, v] = uv;
-
-        // Apply cropping - map to the visible portion of the source
-        u = cropX + u * (1 - 2 * cropX);
-        v = cropY + v * (1 - 2 * cropY);
-
-        // Clamp to valid range
-        u = Math.max(0, Math.min(1, u));
-        v = Math.max(0, Math.min(1, v));
-
-        const srcX = u * (coverWidth - 1);
-        const srcY = v * (coverHeight - 1);
-
-        const color = bilinearSample(coverPixels, coverWidth, coverHeight, srcX, srcY);
-
-        const destIdx = (y * templateWidth + x) * 4;
-        outputPixels[destIdx] = color[0];
-        outputPixels[destIdx + 1] = color[1];
-        outputPixels[destIdx + 2] = color[2];
-        outputPixels[destIdx + 3] = color[3];
+      if (coverAspect > quadAspect) {
+        // Cover is WIDER than quad - fit by HEIGHT, crop WIDTH
+        // Calculate how much width to crop
+        const targetWidth = quadAspect / coverAspect;  // What width ratio we need
+        cropX = (1 - targetWidth) / 2;  // Crop equally from both sides
+      } else {
+        // Cover is TALLER than quad - fit by WIDTH, crop HEIGHT
+        // Calculate how much height to crop
+        const targetHeight = coverAspect / quadAspect;  // What height ratio we need
+        cropY = (1 - targetHeight) / 2;  // Crop equally from top and bottom
       }
-    }
 
-    console.log('Cover perspective warp complete');
+      console.log('Crop transform:', { coverAspect, quadAspect, cropX, cropY });
+
+      // For each pixel in the quad region, map to source cover
+      const quadMinX = Math.min(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
+      const quadMaxX = Math.max(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
+      const quadMinY = Math.min(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
+      const quadMaxY = Math.max(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
+
+      for (let y = quadMinY; y <= quadMaxY; y++) {
+        for (let x = quadMinX; x <= quadMaxX; x++) {
+          if (!isPointInQuad(x, y, quad)) continue;
+
+          const uv = quadToUV(x, y, quad);
+          if (!uv) continue;
+
+          // Map UV [0,1] to the cropped region of the source image
+          let [u, v] = uv;
+
+          // Apply cropping - map to the visible portion of the source
+          u = cropX + u * (1 - 2 * cropX);
+          v = cropY + v * (1 - 2 * cropY);
+
+          // Clamp to valid range
+          u = Math.max(0, Math.min(1, u));
+          v = Math.max(0, Math.min(1, v));
+
+          const srcX = u * (coverWidth - 1);
+          const srcY = v * (coverHeight - 1);
+
+          const color = bilinearSample(coverPixels, coverWidth, coverHeight, srcX, srcY);
+
+          const destIdx = (y * templateWidth + x) * 4;
+          outputPixels[destIdx] = color[0];
+          outputPixels[destIdx + 1] = color[1];
+          outputPixels[destIdx + 2] = color[2];
+          outputPixels[destIdx + 3] = color[3];
+        }
+      }
+
+      console.log('Cover perspective warp complete');
+    } else {
+      console.log('No cover image provided, using template as-is');
+    }
 
     // Calculate page edge quad
     console.log('Calculating page edge quad...');
