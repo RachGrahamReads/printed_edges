@@ -321,6 +321,9 @@ serve(async (req) => {
 
   } catch (error) {
     console.error("Error processing chunk:", error);
+    console.error("Error stack:", error.stack);
+    console.error("Error type:", typeof error);
+    console.error("Error constructor:", error?.constructor?.name);
     return new Response(
       JSON.stringify({ error: error.message }),
       {
