@@ -682,11 +682,20 @@ serve(async (req) => {
 
           const edgeColor = bilinearSample(edgePixels, edgeWidth, edgeHeight, edgeSrcX, edgeSrcY);
 
+          // Apply 90% opacity to edge design
+          const opacity = 0.9;
           const destIdx = (y * templateWidth + x) * 4;
-          outputPixels[destIdx] = edgeColor[0];
-          outputPixels[destIdx + 1] = edgeColor[1];
-          outputPixels[destIdx + 2] = edgeColor[2];
-          outputPixels[destIdx + 3] = edgeColor[3];
+
+          // Get existing background color
+          const bgR = outputPixels[destIdx];
+          const bgG = outputPixels[destIdx + 1];
+          const bgB = outputPixels[destIdx + 2];
+
+          // Blend edge color with background at 90% opacity
+          outputPixels[destIdx] = Math.round(edgeColor[0] * opacity + bgR * (1 - opacity));
+          outputPixels[destIdx + 1] = Math.round(edgeColor[1] * opacity + bgG * (1 - opacity));
+          outputPixels[destIdx + 2] = Math.round(edgeColor[2] * opacity + bgB * (1 - opacity));
+          outputPixels[destIdx + 3] = 255;
         }
       }
 
