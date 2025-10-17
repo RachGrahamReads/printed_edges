@@ -682,8 +682,13 @@ serve(async (req) => {
 
           const edgeColor = bilinearSample(edgePixels, edgeWidth, edgeHeight, edgeSrcX, edgeSrcY);
 
-          // Apply 50% opacity to edge design (50% transparent)
-          // Use screen blend mode to make edges appear lighter
+          // Lighten the edge colors by blending with white
+          const lightenAmount = 0.5; // 50% lighter
+          const lightenedR = edgeColor[0] + (255 - edgeColor[0]) * lightenAmount;
+          const lightenedG = edgeColor[1] + (255 - edgeColor[1]) * lightenAmount;
+          const lightenedB = edgeColor[2] + (255 - edgeColor[2]) * lightenAmount;
+
+          // Apply at 50% opacity
           const opacity = 0.5;
           const destIdx = (y * templateWidth + x) * 4;
 
@@ -692,21 +697,10 @@ serve(async (req) => {
           const bgG = outputPixels[destIdx + 1];
           const bgB = outputPixels[destIdx + 2];
 
-          // Screen blend mode: inverts both colors, multiplies them, then inverts again
-          // This creates a lighter result (opposite of multiply)
-          const screenBlend = (base: number, blend: number) => {
-            return 255 - ((255 - base) * (255 - blend)) / 255;
-          };
-
-          // Apply screen blend with opacity
-          const screenR = screenBlend(bgR, edgeColor[0]);
-          const screenG = screenBlend(bgG, edgeColor[1]);
-          const screenB = screenBlend(bgB, edgeColor[2]);
-
-          // Mix screen blend result with original background based on opacity
-          outputPixels[destIdx] = Math.round(screenR * opacity + bgR * (1 - opacity));
-          outputPixels[destIdx + 1] = Math.round(screenG * opacity + bgG * (1 - opacity));
-          outputPixels[destIdx + 2] = Math.round(screenB * opacity + bgB * (1 - opacity));
+          // Blend lightened edge color with background
+          outputPixels[destIdx] = Math.round(lightenedR * opacity + bgR * (1 - opacity));
+          outputPixels[destIdx + 1] = Math.round(lightenedG * opacity + bgG * (1 - opacity));
+          outputPixels[destIdx + 2] = Math.round(lightenedB * opacity + bgB * (1 - opacity));
           outputPixels[destIdx + 3] = 255;
         }
       }
