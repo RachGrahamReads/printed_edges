@@ -307,48 +307,12 @@ function renderDefaultPageEdge(
       if (x < 0 || x >= templateWidth || y < 0 || y >= templateHeight) continue;
       if (!isPointInQuad(x, y, pageEdgeQuad)) continue;
 
-      // Get UV coordinates for this pixel
-      const uv = quadToUV(x, y, pageEdgeQuad);
-      if (!uv) continue;
-      const [u] = uv; // u = horizontal position (0=left, 1=right)
-
-      // Start with base color
-      let r = paperColor[0];
-      let g = paperColor[1];
-      let b = paperColor[2];
-
-      // 1. VERTICAL LINES (page separators)
-      // Each page is represented by a vertical line
-      const numPages = 300; // Approximate number of visible page lines
-      const isPageLine = Math.abs(u * numPages - Math.floor(u * numPages)) < 0.4;
-
-      if (isPageLine) {
-        // Darken for page separator lines
-        r = Math.max(0, r - 5);
-        g = Math.max(0, g - 5);
-        b = Math.max(0, b - 5);
-      }
-
-      // 2. GRADIENT SHADING (left to right - depth effect)
-      // Darker on the left (closer to viewer), lighter on right (receding)
-      const gradientFactor = 1 - (u * 0.15); // 15% variation
-      r = Math.round(r * gradientFactor);
-      g = Math.round(g * gradientFactor);
-      b = Math.round(b * gradientFactor);
-
-      // 3. SUBTLE TEXTURE/NOISE
-      // Add slight random variation for paper texture
-      const noise = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1; // Pseudo-random
-      const noiseAmount = (noise - 0.5) * 6; // ±3 color variation
-      r = Math.max(0, Math.min(255, r + noiseAmount));
-      g = Math.max(0, Math.min(255, g + noiseAmount));
-      b = Math.max(0, Math.min(255, b + noiseAmount));
-
-      // Write final color
+      // Use clean, light paper color without shading
+      // This allows edge designs to show through with their true colors
       const destIdx = (y * templateWidth + x) * 4;
-      outputPixels[destIdx] = Math.round(r);
-      outputPixels[destIdx + 1] = Math.round(g);
-      outputPixels[destIdx + 2] = Math.round(b);
+      outputPixels[destIdx] = paperColor[0];
+      outputPixels[destIdx + 1] = paperColor[1];
+      outputPixels[destIdx + 2] = paperColor[2];
       outputPixels[destIdx + 3] = 255;
     }
   }
@@ -682,25 +646,19 @@ serve(async (req) => {
 
           const edgeColor = bilinearSample(edgePixels, edgeWidth, edgeHeight, edgeSrcX, edgeSrcY);
 
-          // Lighten the edge colors by blending with white
-          const lightenAmount = 0.5; // 50% lighter
-          const lightenedR = edgeColor[0] + (255 - edgeColor[0]) * lightenAmount;
-          const lightenedG = edgeColor[1] + (255 - edgeColor[1]) * lightenAmount;
-          const lightenedB = edgeColor[2] + (255 - edgeColor[2]) * lightenAmount;
-
-          // Apply at 50% opacity
+          // Apply edge design at 50% opacity with clean light background
           const opacity = 0.5;
           const destIdx = (y * templateWidth + x) * 4;
 
-          // Get existing background color
+          // Get existing background color (now clean light paper color)
           const bgR = outputPixels[destIdx];
           const bgG = outputPixels[destIdx + 1];
           const bgB = outputPixels[destIdx + 2];
 
-          // Blend lightened edge color with background
-          outputPixels[destIdx] = Math.round(lightenedR * opacity + bgR * (1 - opacity));
-          outputPixels[destIdx + 1] = Math.round(lightenedG * opacity + bgG * (1 - opacity));
-          outputPixels[destIdx + 2] = Math.round(lightenedB * opacity + bgB * (1 - opacity));
+          // Blend edge color with light background - no pre-lightening needed
+          outputPixels[destIdx] = Math.round(edgeColor[0] * opacity + bgR * (1 - opacity));
+          outputPixels[destIdx + 1] = Math.round(edgeColor[1] * opacity + bgG * (1 - opacity));
+          outputPixels[destIdx + 2] = Math.round(edgeColor[2] * opacity + bgB * (1 - opacity));
           outputPixels[destIdx + 3] = 255;
         }
       }
