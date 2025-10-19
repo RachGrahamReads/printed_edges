@@ -464,15 +464,15 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
   console.log(`Starting progressive merge for ${chunkPaths.length} chunks`);
   console.log(`Memory optimization strategy:`);
-  console.log(`  - Stage 1 size: 12 chunks per intermediate PDF`);
-  console.log(`  - Stage 2 threshold: >15 intermediate files`);
-  console.log(`  - Stage 2 size: 12 intermediate PDFs per Stage 2 file`);
-  console.log(`  - Stage 3 threshold: >10 Stage 2 files`);
-  console.log(`  - Max files per final merge: 10`);
+  console.log(`  - Stage 1 size: 8 chunks per intermediate PDF`);
+  console.log(`  - Stage 2 threshold: >12 intermediate files`);
+  console.log(`  - Stage 2 size: 8 intermediate PDFs per Stage 2 file`);
+  console.log(`  - Stage 3 threshold: >2 Stage 2 files`);
+  console.log(`  - Stage 3+ size: 2 PDFs per merge (prevents timeout)`);
 
   // Stage 1: Merge chunks into intermediate PDFs
   // Size optimized to balance Edge Function memory limits with minimizing merge stages
-  const INTERMEDIATE_SIZE = 12; // Each merge handles 12 single-page chunks
+  const INTERMEDIATE_SIZE = 8; // Reduced from 12 to create smaller intermediate PDFs
   const intermediateGroups = [];
 
   for (let i = 0; i < chunkPaths.length; i += INTERMEDIATE_SIZE) {
@@ -506,12 +506,12 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
   // Stage 2: If we have many intermediate PDFs, create another level
   // This prevents the final merge from trying to handle too many large files at once
-  if (intermediatePaths.length > 15) {
-    console.log(`📊 Stage 2 REQUIRED: ${intermediatePaths.length} intermediate files exceed threshold of 15`);
+  if (intermediatePaths.length > 12) {
+    console.log(`📊 Stage 2 REQUIRED: ${intermediatePaths.length} intermediate files exceed threshold of 12`);
     console.log(`Stage 2: Merging ${intermediatePaths.length} intermediate PDFs into final groups`);
 
     const stage2Groups = [];
-    const STAGE2_SIZE = 12; // Each Stage 2 merge handles 12 intermediate PDFs
+    const STAGE2_SIZE = 8; // Reduced from 12 to create smaller Stage 2 PDFs
 
     for (let i = 0; i < intermediatePaths.length; i += STAGE2_SIZE) {
       stage2Groups.push(intermediatePaths.slice(i, i + STAGE2_SIZE));
@@ -703,7 +703,8 @@ async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: s
                              errorText.includes('not having enough compute resources');
 
         // For WORKER_LIMIT or memory errors with multiple files, split the merge
-        if ((isMemoryError || isWorkerLimit) && chunkPaths.length > 2 && retryCount < maxRetries) {
+        // Even 2 files can be too large, so we allow splitting down to 1 file per merge
+        if ((isMemoryError || isWorkerLimit) && chunkPaths.length >= 2 && retryCount < maxRetries) {
           if (isWorkerLimit) {
             console.warn(`⚠️ WORKER_LIMIT error (timeout/CPU exhausted) merging ${chunkPaths.length} files. Splitting into smaller groups...`);
           } else {
@@ -756,7 +757,7 @@ async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: s
       const isWorkerLimit = errorMessage.includes('WORKER_LIMIT') ||
                            errorMessage.includes('not having enough compute resources');
 
-      if ((isMemoryError || isWorkerLimit) && chunkPaths.length > 2 && retryCount < maxRetries) {
+      if ((isMemoryError || isWorkerLimit) && chunkPaths.length >= 2 && retryCount < maxRetries) {
         retryCount++;
         console.warn(`Resource error (attempt ${retryCount}/${maxRetries}). Retrying with split merge...`);
         continue;
