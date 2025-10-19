@@ -242,8 +242,13 @@ export async function processPDFWithChunking(
             if (!processResponse.ok) {
               const errorText = await processResponse.text();
               const errorMessage = `${processResponse.status} - ${errorText}`;
-              const isRetryable = errorMessage.includes('WORKER_LIMIT') ||
+              const isRetryable = processResponse.status === 500 || // Server errors are retryable
+                                processResponse.status === 502 || // Bad gateway
+                                processResponse.status === 503 || // Service unavailable
+                                processResponse.status === 504 || // Gateway timeout
+                                errorMessage.includes('WORKER_LIMIT') ||
                                 errorMessage.includes('timeout') ||
+                                errorMessage.includes('connection') || // "Network connection lost"
                                 errorMessage.includes('Failed to send a request') ||
                                 errorMessage.includes('Failed to fetch') ||
                                 errorMessage.includes('NetworkError') ||
@@ -278,6 +283,7 @@ export async function processPDFWithChunking(
 
             const isRetryable = errorMessage.includes('WORKER_LIMIT') ||
                               errorMessage.includes('timeout') ||
+                              errorMessage.includes('connection') || // "Network connection lost"
                               errorMessage.includes('Failed to send a request') ||
                               errorMessage.includes('Failed to fetch') ||
                               errorMessage.includes('NetworkError') ||
