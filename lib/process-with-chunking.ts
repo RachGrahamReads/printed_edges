@@ -31,6 +31,10 @@ export async function processPDFWithChunking(
     throw new Error('Supabase client not initialized');
   }
 
+  // Get Supabase URL and key for Edge Function calls
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
   try {
     const sessionId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const useDesignPaths = designId && userId;
