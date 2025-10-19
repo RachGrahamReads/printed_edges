@@ -545,8 +545,6 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
   console.log(`Stage 1: Creating ${intermediateGroups.length} intermediate PDFs (${chunkPaths.length} chunks ÷ ${INTERMEDIATE_SIZE} = ${intermediateGroups.length} files)`);
 
-  const intermediatePaths: string[] = [];
-
   // Process intermediate groups sequentially to avoid Edge Function rate limits
   // With 60 files, concurrent batching was causing 502 errors
   console.log(`Processing ${intermediateGroups.length} intermediate merges sequentially to avoid rate limits...`);
