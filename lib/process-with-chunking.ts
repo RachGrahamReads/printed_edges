@@ -453,7 +453,40 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-// Progressive merge function for large PDFs
+// Checkpoint helper functions
+async function saveCheckpoint(sessionId: string, stage: string, data: any) {
+  if (!supabase) return;
+
+  const checkpointPath = `${sessionId}/checkpoint_${stage}.json`;
+  const checkpointData = JSON.stringify({
+    stage,
+    timestamp: Date.now(),
+    ...data
+  });
+
+  await supabase.storage
+    .from('processed-pdfs')
+    .upload(checkpointPath, new Blob([checkpointData], { type: 'application/json' }), { upsert: true })
+    .catch(err => console.warn(`Failed to save checkpoint for ${stage}:`, err));
+
+  console.log(`💾 Checkpoint saved: ${stage}`);
+}
+
+async function loadCheckpoint(sessionId: string, stage: string): Promise<any | null> {
+  if (!supabase) return null;
+
+  const checkpointPath = `${sessionId}/checkpoint_${stage}.json`;
+  const { data, error } = await supabase.storage
+    .from('processed-pdfs')
+    .download(checkpointPath);
+
+  if (error || !data) return null;
+
+  const text = await data.text();
+  return JSON.parse(text);
+}
+
+// Progressive merge function for large PDFs with checkpointing
 async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOutputPath: string): Promise<string> {
   if (!supabase) {
     throw new Error('Supabase client not initialized');
@@ -463,6 +496,15 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
   console.log(`Starting progressive merge for ${chunkPaths.length} chunks`);
+
+  // Try to resume from checkpoint
+  const stage1Checkpoint = await loadCheckpoint(sessionId, 'stage1_complete');
+  let intermediatePaths: string[] = [];
+
+  if (stage1Checkpoint && stage1Checkpoint.intermediatePaths) {
+    console.log(`📂 Resuming from Stage 1 checkpoint (${stage1Checkpoint.intermediatePaths.length} intermediate PDFs)`);
+    intermediatePaths = stage1Checkpoint.intermediatePaths;
+  } else {
   console.log(`Memory optimization strategy:`);
   console.log(`  - Stage 1 size: 8 chunks per intermediate PDF`);
   console.log(`  - Stage 2 threshold: >12 intermediate files`);
@@ -504,9 +546,20 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
     console.log(`Stage 1 batch ${Math.floor(batchStart/BATCH_SIZE) + 1}/${Math.ceil(intermediateGroups.length/BATCH_SIZE)} completed`);
   }
 
+  // Save checkpoint after Stage 1
+  await saveCheckpoint(sessionId, 'stage1_complete', { intermediatePaths });
+  }
+
+  // Check for Stage 2 checkpoint
+  const stage2Checkpoint = await loadCheckpoint(sessionId, 'stage2_complete');
+  let stage2Paths: string[] = [];
+
   // Stage 2: If we have many intermediate PDFs, create another level
   // This prevents the final merge from trying to handle too many large files at once
-  if (intermediatePaths.length > 12) {
+  if (stage2Checkpoint && stage2Checkpoint.stage2Paths) {
+    console.log(`📂 Resuming from Stage 2 checkpoint (${stage2Checkpoint.stage2Paths.length} Stage 2 PDFs)`);
+    stage2Paths = stage2Checkpoint.stage2Paths;
+  } else if (intermediatePaths.length > 12) {
     console.log(`📊 Stage 2 REQUIRED: ${intermediatePaths.length} intermediate files exceed threshold of 12`);
     console.log(`Stage 2: Merging ${intermediatePaths.length} intermediate PDFs into final groups`);
 
@@ -519,7 +572,7 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
     console.log(`  → Creating ${stage2Groups.length} Stage 2 files (${intermediatePaths.length} intermediates ÷ ${STAGE2_SIZE})`);
 
-    const stage2Paths: string[] = [];
+    stage2Paths = [];
 
     for (let groupIndex = 0; groupIndex < stage2Groups.length; groupIndex++) {
       const group = stage2Groups[groupIndex];
@@ -528,6 +581,9 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
       const result = await mergeGroup(group, stage2Path, sessionId, groupIndex + 1, stage2Groups.length);
       stage2Paths.push(result);
     }
+
+    // Save checkpoint after Stage 2
+    await saveCheckpoint(sessionId, 'stage2_complete', { stage2Paths });
 
     // Clean up Stage 1 intermediate files - no longer needed
     console.log(`Cleaning up ${intermediatePaths.length} Stage 1 intermediate files...`);
@@ -539,6 +595,7 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
     } catch (cleanupError) {
       console.warn('Failed to cleanup Stage 1 files:', cleanupError);
     }
+  }
 
     // Final stage: Merge stage2 results
     // Safety check: If we have >2 Stage 2 files, use split strategy to avoid timeout
