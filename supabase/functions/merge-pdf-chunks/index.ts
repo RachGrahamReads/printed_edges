@@ -13,6 +13,9 @@ interface MergeRequest {
   processedChunkPaths: string[];
   totalChunks: number;
   outputPath: string;
+  // For resumable merges after timeout
+  resumeFromPath?: string; // If provided, load this PDF and continue merging
+  startIndex?: number; // Which chunk index to start from (for resume)
 }
 
 // Retry utility with exponential backoff
@@ -91,13 +94,41 @@ serve(async (req) => {
     // Create the final merged PDF
     // MEMORY OPTIMIZATION: Instead of loading all chunks and copying pages,
     // we merge in smaller batches and save intermediate PDFs to avoid memory buildup
-    let mergedPdf = await PDFDocument.create();
+
+    // RESUME SUPPORT: If resuming from a timeout, load the partial PDF
+    let mergedPdf: any;
+    let startFromIndex = 0;
     let totalPages = 0;
 
-    // Reduce batch size to minimize memory pressure from embedded resources
-    const BATCH_SIZE = 2; // Process 2 chunks at a time, then save intermediate
+    if (requestData.resumeFromPath) {
+      console.log(`📂 Resuming merge from checkpoint: ${requestData.resumeFromPath}`);
+      console.log(`   Starting from chunk index: ${requestData.startIndex || 0}`);
+
+      const { data: resumeData, error: resumeError } = await supabase.storage
+        .from("processed-pdfs")
+        .download(requestData.resumeFromPath);
+
+      if (resumeError) {
+        console.warn(`Failed to load resume checkpoint, starting fresh: ${resumeError.message}`);
+        mergedPdf = await PDFDocument.create();
+      } else {
+        const resumeBytes = await resumeData.arrayBuffer();
+        mergedPdf = await PDFDocument.load(resumeBytes);
+        totalPages = mergedPdf.getPageCount();
+        startFromIndex = requestData.startIndex || 0;
+        console.log(`✓ Resumed with ${totalPages} pages already merged. Continuing from chunk ${startFromIndex + 1}/${requestData.totalChunks}`);
+      }
+    } else {
+      mergedPdf = await PDFDocument.create();
+    }
+
+    // Adaptive batch size based on chunk count
+    // For merging Stage 2 PDFs (few large files), use larger batch to avoid timeout
+    // For merging single-page chunks (many small files), use smaller batch for memory
+    const isMergingLargeFiles = requestData.totalChunks <= 10;
+    const BATCH_SIZE = isMergingLargeFiles ? requestData.totalChunks : 2; // No batching for ≤10 files
     const batches = [];
-    for (let i = 0; i < requestData.totalChunks; i += BATCH_SIZE) {
+    for (let i = startFromIndex; i < requestData.totalChunks; i += BATCH_SIZE) {
       batches.push({
         start: i,
         end: Math.min(i + BATCH_SIZE, requestData.totalChunks)
@@ -105,7 +136,11 @@ serve(async (req) => {
     }
 
     console.log(`Processing ${requestData.totalChunks} chunks in ${batches.length} batches of up to ${BATCH_SIZE}`);
-    console.log(`Memory optimization: Saving intermediate PDFs every ${BATCH_SIZE} chunks to prevent memory buildup`);
+    if (isMergingLargeFiles) {
+      console.log(`Large file merge detected (≤10 files). Using single-pass merge without intermediate saves for speed.`);
+    } else {
+      console.log(`Memory optimization: Saving intermediate PDFs every ${BATCH_SIZE} chunks to prevent memory buildup`);
+    }
 
     // Process each batch and save intermediate PDFs to free memory
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -178,7 +213,7 @@ serve(async (req) => {
           const intermediateBytes = await mergedPdf.save({
             useObjectStreams: false,
             addDefaultPage: false,
-            objectsPerTick: 50,
+            objectsPerTick: 100, // Increased for faster processing
             updateFieldAppearances: false,
           });
 
@@ -202,13 +237,15 @@ serve(async (req) => {
 
     console.log(`Finished merging all chunks. Final PDF has ${totalPages} pages`);
 
-    // Save the merged PDF with optimization for large files
+    // Save the merged PDF with optimization for speed
+    const startSave = Date.now();
     const mergedBytes = await mergedPdf.save({
       useObjectStreams: false,
       addDefaultPage: false,
-      objectsPerTick: 25, // Reduced for better performance
+      objectsPerTick: 100, // Increased for faster processing (was 25)
       updateFieldAppearances: false, // Skip field appearance updates
     });
+    console.log(`PDF save completed in ${Date.now() - startSave}ms`);
 
     console.log(`Merged PDF size: ${mergedBytes.length} bytes`);
 

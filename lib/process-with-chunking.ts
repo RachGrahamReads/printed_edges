@@ -545,19 +545,20 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
     }
 
     // Final stage: Merge stage2 results
-    // Safety check: If we still have too many Stage 2 files, use Stage 3
-    if (stage2Paths.length > 10) {
-      console.warn(`⚠️ MEMORY SAFETY: Stage 2 produced ${stage2Paths.length} files (exceeds safe limit of 10)`);
-      console.warn(`⚠️ Stage 3 REQUIRED to prevent "Array buffer allocation failed" errors`);
+    // Safety check: If we have >2 Stage 2 files, use split strategy to avoid timeout
+    // Merging 3+ large Stage 2 PDFs in one go can hit WORKER_LIMIT (CPU timeout)
+    if (stage2Paths.length > 2) {
+      console.warn(`⚠️ PERFORMANCE: Stage 2 produced ${stage2Paths.length} files (>2 threshold)`);
+      console.warn(`⚠️ Using Stage 3 split-merge to prevent timeout and memory errors`);
 
       const stage3Groups = [];
-      const STAGE3_SIZE = 10;
+      const STAGE3_SIZE = 2; // Merge only 2 at a time to stay under CPU timeout limit
 
       for (let i = 0; i < stage2Paths.length; i += STAGE3_SIZE) {
         stage3Groups.push(stage2Paths.slice(i, i + STAGE3_SIZE));
       }
 
-      console.log(`  → Creating ${stage3Groups.length} Stage 3 files (${stage2Paths.length} Stage 2 files ÷ ${STAGE3_SIZE})`);
+      console.log(`  → Creating ${stage3Groups.length} Stage 3 files (${stage2Paths.length} Stage 2 files, ${STAGE3_SIZE} per merge)`);
 
       const stage3Paths: string[] = [];
 
@@ -580,20 +581,46 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
         console.warn('Failed to cleanup Stage 2 files:', cleanupError);
       }
 
-      // Final merge of Stage 3
-      console.log(`✅ Final stage: Merging ${stage3Paths.length} stage3 PDFs into final PDF (safe: <10 files)`);
-      const finalPath = await mergeGroup(stage3Paths, finalOutputPath, sessionId, 1, 1);
+      // Continue merging until we have ≤2 files
+      let currentPaths = stage3Paths;
+      let stageNumber = 4;
 
-      // Clean up Stage 3 files
-      console.log(`Cleaning up ${stage3Paths.length} Stage 3 intermediate files...`);
-      try {
+      while (currentPaths.length > 2) {
+        console.log(`Stage ${stageNumber}: Merging ${currentPaths.length} files (2 at a time)...`);
+
+        const nextGroups = [];
+        for (let i = 0; i < currentPaths.length; i += 2) {
+          nextGroups.push(currentPaths.slice(i, i + 2));
+        }
+
+        const nextPaths: string[] = [];
+        for (let groupIndex = 0; groupIndex < nextGroups.length; groupIndex++) {
+          const group = nextGroups[groupIndex];
+          const stagePath = `${sessionId}/intermediate/stage${stageNumber}_${groupIndex}.pdf`;
+
+          const result = await mergeGroup(group, stagePath, sessionId, groupIndex + 1, nextGroups.length);
+          nextPaths.push(result);
+        }
+
+        // Clean up previous stage
         await supabase.storage
           .from('processed-pdfs')
-          .remove(stage3Paths);
-        console.log('✓ Stage 3 files cleaned up');
-      } catch (cleanupError) {
-        console.warn('Failed to cleanup Stage 3 files:', cleanupError);
+          .remove(currentPaths)
+          .catch(err => console.warn(`Failed to cleanup Stage ${stageNumber - 1}:`, err));
+
+        currentPaths = nextPaths;
+        stageNumber++;
       }
+
+      // Final merge
+      console.log(`✅ Final stage: Merging ${currentPaths.length} PDFs into final PDF`);
+      const finalPath = await mergeGroup(currentPaths, finalOutputPath, sessionId, 1, 1);
+
+      // Clean up last intermediate stage
+      await supabase.storage
+        .from('processed-pdfs')
+        .remove(currentPaths)
+        .catch(err => console.warn('Failed to cleanup final intermediate files:', err));
 
       return finalPath;
     } else {
@@ -671,13 +698,21 @@ async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: s
         const errorText = await mergeResponse.text();
         const errorMessage = `${mergeResponse.status} - ${errorText}`;
 
-        // Check if it's a memory allocation error
+        // Check if it's a memory or resource error
         const isMemoryError = errorText.includes('Array buffer allocation failed') ||
                             errorText.includes('out of memory') ||
                             errorText.includes('OOM');
 
-        if (isMemoryError && chunkPaths.length > 2 && retryCount < maxRetries) {
-          console.warn(`⚠️ Memory error merging ${chunkPaths.length} files. Splitting into smaller groups...`);
+        const isWorkerLimit = errorText.includes('WORKER_LIMIT') ||
+                             errorText.includes('not having enough compute resources');
+
+        // For WORKER_LIMIT or memory errors with multiple files, split the merge
+        if ((isMemoryError || isWorkerLimit) && chunkPaths.length > 2 && retryCount < maxRetries) {
+          if (isWorkerLimit) {
+            console.warn(`⚠️ WORKER_LIMIT error (timeout/CPU exhausted) merging ${chunkPaths.length} files. Splitting into smaller groups...`);
+          } else {
+            console.warn(`⚠️ Memory error merging ${chunkPaths.length} files. Splitting into smaller groups...`);
+          }
 
           // Split into two groups and merge recursively
           const midpoint = Math.ceil(chunkPaths.length / 2);
@@ -722,9 +757,12 @@ async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: s
                           errorMessage.includes('out of memory') ||
                           errorMessage.includes('OOM');
 
-      if (isMemoryError && chunkPaths.length > 2 && retryCount < maxRetries) {
+      const isWorkerLimit = errorMessage.includes('WORKER_LIMIT') ||
+                           errorMessage.includes('not having enough compute resources');
+
+      if ((isMemoryError || isWorkerLimit) && chunkPaths.length > 2 && retryCount < maxRetries) {
         retryCount++;
-        console.warn(`Memory error (attempt ${retryCount}/${maxRetries}). Retrying with split merge...`);
+        console.warn(`Resource error (attempt ${retryCount}/${maxRetries}). Retrying with split merge...`);
         continue;
       }
 
