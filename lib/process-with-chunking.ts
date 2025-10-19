@@ -393,6 +393,9 @@ export async function processPDFWithChunking(
       .remove([finalPdfPath])
       .catch(err => console.warn('Failed to cleanup processed PDF:', err));
 
+    // Clear checkpoints on success
+    await clearCheckpoints(sessionId);
+
     // Return PDF buffer and slice paths (when using design-based paths)
     if (useDesignPaths) {
       return {
@@ -457,37 +460,46 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-// Checkpoint helper functions
+// Checkpoint helper functions using localStorage (storage buckets don't accept JSON)
 async function saveCheckpoint(sessionId: string, stage: string, data: any) {
-  if (!supabase) return;
+  try {
+    const checkpointKey = `pdf_checkpoint_${sessionId}_${stage}`;
+    const checkpointData = JSON.stringify({
+      stage,
+      timestamp: Date.now(),
+      ...data
+    });
 
-  const checkpointPath = `${sessionId}/checkpoint_${stage}.json`;
-  const checkpointData = JSON.stringify({
-    stage,
-    timestamp: Date.now(),
-    ...data
-  });
-
-  await supabase.storage
-    .from('processed-pdfs')
-    .upload(checkpointPath, new Blob([checkpointData], { type: 'application/json' }), { upsert: true })
-    .catch(err => console.warn(`Failed to save checkpoint for ${stage}:`, err));
-
-  console.log(`💾 Checkpoint saved: ${stage}`);
+    localStorage.setItem(checkpointKey, checkpointData);
+    console.log(`💾 Checkpoint saved: ${stage}`);
+  } catch (err) {
+    console.warn(`Failed to save checkpoint for ${stage}:`, err);
+  }
 }
 
 async function loadCheckpoint(sessionId: string, stage: string): Promise<any | null> {
-  if (!supabase) return null;
+  try {
+    const checkpointKey = `pdf_checkpoint_${sessionId}_${stage}`;
+    const checkpointData = localStorage.getItem(checkpointKey);
 
-  const checkpointPath = `${sessionId}/checkpoint_${stage}.json`;
-  const { data, error } = await supabase.storage
-    .from('processed-pdfs')
-    .download(checkpointPath);
+    if (!checkpointData) return null;
 
-  if (error || !data) return null;
+    return JSON.parse(checkpointData);
+  } catch (err) {
+    console.warn(`Failed to load checkpoint for ${stage}:`, err);
+    return null;
+  }
+}
 
-  const text = await data.text();
-  return JSON.parse(text);
+async function clearCheckpoints(sessionId: string) {
+  try {
+    const keys = Object.keys(localStorage);
+    const checkpointKeys = keys.filter(key => key.startsWith(`pdf_checkpoint_${sessionId}`));
+    checkpointKeys.forEach(key => localStorage.removeItem(key));
+    console.log(`🗑️ Cleared ${checkpointKeys.length} checkpoints`);
+  } catch (err) {
+    console.warn('Failed to clear checkpoints:', err);
+  }
 }
 
 // Progressive merge function for large PDFs with checkpointing
@@ -550,6 +562,8 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
       await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
+
+  console.log(`✅ Stage 1 complete: ${intermediatePaths.length} intermediate PDFs created`);
 
   // Save checkpoint after Stage 1
   await saveCheckpoint(sessionId, 'stage1_complete', { intermediatePaths });
