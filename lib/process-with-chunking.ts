@@ -529,25 +529,26 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
   const intermediatePaths: string[] = [];
 
-  // Process intermediate groups in batches to avoid overwhelming the system
-  const BATCH_SIZE = 3; // Reduced from 5 to minimize concurrent Edge Function load
-  for (let batchStart = 0; batchStart < intermediateGroups.length; batchStart += BATCH_SIZE) {
-    const batchEnd = Math.min(batchStart + BATCH_SIZE, intermediateGroups.length);
-    const batchPromises = [];
+  // Process intermediate groups sequentially to avoid Edge Function rate limits
+  // With 60 files, concurrent batching was causing 502 errors
+  console.log(`Processing ${intermediateGroups.length} intermediate merges sequentially to avoid rate limits...`);
 
-    for (let groupIndex = batchStart; groupIndex < batchEnd; groupIndex++) {
-      const group = intermediateGroups[groupIndex];
-      const intermediatePath = `${sessionId}/intermediate/stage1_${groupIndex}.pdf`;
+  for (let groupIndex = 0; groupIndex < intermediateGroups.length; groupIndex++) {
+    const group = intermediateGroups[groupIndex];
+    const intermediatePath = `${sessionId}/intermediate/stage1_${groupIndex}.pdf`;
 
-      batchPromises.push(
-        mergeGroup(group, intermediatePath, sessionId, groupIndex + 1, intermediateGroups.length)
-      );
+    const result = await mergeGroup(group, intermediatePath, sessionId, groupIndex + 1, intermediateGroups.length);
+    intermediatePaths.push(result);
+
+    // Log progress every 10 merges
+    if ((groupIndex + 1) % 10 === 0 || groupIndex === intermediateGroups.length - 1) {
+      console.log(`Stage 1 progress: ${groupIndex + 1}/${intermediateGroups.length} intermediate PDFs created`);
     }
 
-    const batchResults = await Promise.all(batchPromises);
-    intermediatePaths.push(...batchResults);
-
-    console.log(`Stage 1 batch ${Math.floor(batchStart/BATCH_SIZE) + 1}/${Math.ceil(intermediateGroups.length/BATCH_SIZE)} completed`);
+    // Small delay between calls to avoid rate limiting (except for last one)
+    if (groupIndex < intermediateGroups.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
   }
 
   // Save checkpoint after Stage 1
