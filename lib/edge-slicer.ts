@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createSupabaseClient } from './supabase/client';
 
 // PDF constants - must match the values in the PDF processing functions
 const BLEED_INCHES = 0.125;
@@ -24,12 +24,8 @@ function getEdgeImageDPI(pageType: 'bw' | 'standard' | 'premium'): number {
 }
 
 // Supabase client for storage operations
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-export const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+// Use the singleton client instance to avoid multiple GoTrueClient instances
+export const supabase = createSupabaseClient();
 
 // Helper function to convert PDF points to canvas pixels with dynamic DPI
 function pointsToCanvasPixels(points: number, pageType: 'bw' | 'standard' | 'premium' = 'standard'): number {

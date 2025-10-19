@@ -1,12 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createSupabaseClient } from './supabase/client';
 import { createAndStoreRawSlices, createAndStoreMaskedSlices, createAndStoreDesignSlices, createAndStoreDesignMaskedSlices } from './edge-slicer';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-export const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+// Use the singleton client instance to avoid multiple GoTrueClient instances
+export const supabase = createSupabaseClient();
 
 const CHUNK_SIZE = 1; // Process single pages to minimize CPU usage per Edge Function call
 
