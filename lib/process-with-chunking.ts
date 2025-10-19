@@ -599,7 +599,6 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
     } catch (cleanupError) {
       console.warn('Failed to cleanup Stage 1 files:', cleanupError);
     }
-  }
 
     // Final stage: Merge stage2 results
     // Safety check: If we have >2 Stage 2 files, use split strategy to avoid timeout
@@ -681,7 +680,7 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
       return finalPath;
     } else {
-      console.log(`✅ Final stage: Merging ${stage2Paths.length} stage2 PDFs into final PDF (safe: ≤10 files)`);
+      console.log(`✅ Final stage: Merging ${stage2Paths.length} stage2 PDFs into final PDF (safe: ≤2 files)`);
       const finalPath = await mergeGroup(stage2Paths, finalOutputPath, sessionId, 1, 1);
 
       // Clean up Stage 2 intermediate files - no longer needed
@@ -697,9 +696,9 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
       return finalPath;
     }
-  } else {
+  } else if (intermediatePaths.length > 0) {
     // Final stage: Merge intermediate PDFs directly
-    console.log(`📊 Stage 2 SKIPPED: ${intermediatePaths.length} intermediate files ≤ threshold of 15`);
+    console.log(`📊 Stage 2 SKIPPED: ${intermediatePaths.length} intermediate files ≤ threshold of 12`);
     console.log(`✅ Final stage: Merging ${intermediatePaths.length} intermediate PDFs into final PDF`);
     const finalPath = await mergeGroup(intermediatePaths, finalOutputPath, sessionId, 1, 1);
 
@@ -715,6 +714,9 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
     }
 
     return finalPath;
+  } else {
+    // No intermediate paths - this shouldn't happen but handle gracefully
+    throw new Error('No intermediate PDFs were created. This indicates a problem with the chunking process.');
   }
 }
 
