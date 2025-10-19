@@ -405,6 +405,32 @@ export async function processPDFWithChunking(
 
   } catch (error) {
     console.error('Error processing PDF with chunking:', error);
+
+    // Provide helpful error messages for common issues
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    if (errorMessage.includes('Array buffer allocation failed') || errorMessage.includes('out of memory')) {
+      throw new Error(
+        `Your PDF is too large to process. This typically happens with PDFs over 100MB or 500+ pages. ` +
+        `Please try a smaller PDF or contact support for assistance with large files.`
+      );
+    }
+
+    if (errorMessage.includes('timeout') || errorMessage.includes('504')) {
+      throw new Error(
+        `Processing timed out. Your PDF may be too complex. ` +
+        `If the problem persists, please contact support.`
+      );
+    }
+
+    if (errorMessage.includes('WORKER_LIMIT')) {
+      throw new Error(
+        `Our servers are currently busy. Please wait a moment and try again. ` +
+        `If the problem persists, please contact support.`
+      );
+    }
+
+    // Re-throw original error if we don't have a specific message
     throw error;
   }
 }
@@ -441,16 +467,23 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
   console.log(`Starting progressive merge for ${chunkPaths.length} chunks`);
+  console.log(`Memory optimization strategy:`);
+  console.log(`  - Stage 1 size: 12 chunks per intermediate PDF`);
+  console.log(`  - Stage 2 threshold: >15 intermediate files`);
+  console.log(`  - Stage 2 size: 12 intermediate PDFs per Stage 2 file`);
+  console.log(`  - Stage 3 threshold: >10 Stage 2 files`);
+  console.log(`  - Max files per final merge: 10`);
 
-  // Stage 1: Merge chunks into intermediate PDFs (8-10 chunks per intermediate to reduce memory pressure)
-  const INTERMEDIATE_SIZE = 8; // Reduced from 12 to minimize Edge Function memory usage
+  // Stage 1: Merge chunks into intermediate PDFs
+  // Size optimized to balance Edge Function memory limits with minimizing merge stages
+  const INTERMEDIATE_SIZE = 12; // Each merge handles 12 single-page chunks
   const intermediateGroups = [];
 
   for (let i = 0; i < chunkPaths.length; i += INTERMEDIATE_SIZE) {
     intermediateGroups.push(chunkPaths.slice(i, i + INTERMEDIATE_SIZE));
   }
 
-  console.log(`Stage 1: Creating ${intermediateGroups.length} intermediate PDFs`);
+  console.log(`Stage 1: Creating ${intermediateGroups.length} intermediate PDFs (${chunkPaths.length} chunks ÷ ${INTERMEDIATE_SIZE} = ${intermediateGroups.length} files)`);
 
   const intermediatePaths: string[] = [];
 
@@ -476,15 +509,19 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
   }
 
   // Stage 2: If we have many intermediate PDFs, create another level
-  if (intermediatePaths.length > 12) { // Reduced threshold from 15 to 12
+  // This prevents the final merge from trying to handle too many large files at once
+  if (intermediatePaths.length > 15) {
+    console.log(`📊 Stage 2 REQUIRED: ${intermediatePaths.length} intermediate files exceed threshold of 15`);
     console.log(`Stage 2: Merging ${intermediatePaths.length} intermediate PDFs into final groups`);
 
     const stage2Groups = [];
-    const STAGE2_SIZE = 8; // Reduced from 10 to minimize memory pressure
+    const STAGE2_SIZE = 12; // Each Stage 2 merge handles 12 intermediate PDFs
 
     for (let i = 0; i < intermediatePaths.length; i += STAGE2_SIZE) {
       stage2Groups.push(intermediatePaths.slice(i, i + STAGE2_SIZE));
     }
+
+    console.log(`  → Creating ${stage2Groups.length} Stage 2 files (${intermediatePaths.length} intermediates ÷ ${STAGE2_SIZE})`);
 
     const stage2Paths: string[] = [];
 
@@ -508,24 +545,78 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
     }
 
     // Final stage: Merge stage2 results
-    console.log(`Final stage: Merging ${stage2Paths.length} stage2 PDFs into final PDF`);
-    const finalPath = await mergeGroup(stage2Paths, finalOutputPath, sessionId, 1, 1);
+    // Safety check: If we still have too many Stage 2 files, use Stage 3
+    if (stage2Paths.length > 10) {
+      console.warn(`⚠️ MEMORY SAFETY: Stage 2 produced ${stage2Paths.length} files (exceeds safe limit of 10)`);
+      console.warn(`⚠️ Stage 3 REQUIRED to prevent "Array buffer allocation failed" errors`);
 
-    // Clean up Stage 2 intermediate files - no longer needed
-    console.log(`Cleaning up ${stage2Paths.length} Stage 2 intermediate files...`);
-    try {
-      await supabase.storage
-        .from('processed-pdfs')
-        .remove(stage2Paths);
-      console.log('✓ Stage 2 files cleaned up');
-    } catch (cleanupError) {
-      console.warn('Failed to cleanup Stage 2 files:', cleanupError);
+      const stage3Groups = [];
+      const STAGE3_SIZE = 10;
+
+      for (let i = 0; i < stage2Paths.length; i += STAGE3_SIZE) {
+        stage3Groups.push(stage2Paths.slice(i, i + STAGE3_SIZE));
+      }
+
+      console.log(`  → Creating ${stage3Groups.length} Stage 3 files (${stage2Paths.length} Stage 2 files ÷ ${STAGE3_SIZE})`);
+
+      const stage3Paths: string[] = [];
+
+      for (let groupIndex = 0; groupIndex < stage3Groups.length; groupIndex++) {
+        const group = stage3Groups[groupIndex];
+        const stage3Path = `${sessionId}/intermediate/stage3_${groupIndex}.pdf`;
+
+        const result = await mergeGroup(group, stage3Path, sessionId, groupIndex + 1, stage3Groups.length);
+        stage3Paths.push(result);
+      }
+
+      // Clean up Stage 2 files
+      console.log(`Cleaning up ${stage2Paths.length} Stage 2 intermediate files...`);
+      try {
+        await supabase.storage
+          .from('processed-pdfs')
+          .remove(stage2Paths);
+        console.log('✓ Stage 2 files cleaned up');
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup Stage 2 files:', cleanupError);
+      }
+
+      // Final merge of Stage 3
+      console.log(`✅ Final stage: Merging ${stage3Paths.length} stage3 PDFs into final PDF (safe: <10 files)`);
+      const finalPath = await mergeGroup(stage3Paths, finalOutputPath, sessionId, 1, 1);
+
+      // Clean up Stage 3 files
+      console.log(`Cleaning up ${stage3Paths.length} Stage 3 intermediate files...`);
+      try {
+        await supabase.storage
+          .from('processed-pdfs')
+          .remove(stage3Paths);
+        console.log('✓ Stage 3 files cleaned up');
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup Stage 3 files:', cleanupError);
+      }
+
+      return finalPath;
+    } else {
+      console.log(`✅ Final stage: Merging ${stage2Paths.length} stage2 PDFs into final PDF (safe: ≤10 files)`);
+      const finalPath = await mergeGroup(stage2Paths, finalOutputPath, sessionId, 1, 1);
+
+      // Clean up Stage 2 intermediate files - no longer needed
+      console.log(`Cleaning up ${stage2Paths.length} Stage 2 intermediate files...`);
+      try {
+        await supabase.storage
+          .from('processed-pdfs')
+          .remove(stage2Paths);
+        console.log('✓ Stage 2 files cleaned up');
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup Stage 2 files:', cleanupError);
+      }
+
+      return finalPath;
     }
-
-    return finalPath;
   } else {
     // Final stage: Merge intermediate PDFs directly
-    console.log(`Final stage: Merging ${intermediatePaths.length} intermediate PDFs into final PDF`);
+    console.log(`📊 Stage 2 SKIPPED: ${intermediatePaths.length} intermediate files ≤ threshold of 15`);
+    console.log(`✅ Final stage: Merging ${intermediatePaths.length} intermediate PDFs into final PDF`);
     const finalPath = await mergeGroup(intermediatePaths, finalOutputPath, sessionId, 1, 1);
 
     // Clean up Stage 1 intermediate files - no longer needed
@@ -543,48 +634,105 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
   }
 }
 
-// Helper function to merge a group of PDFs
+// Helper function to merge a group of PDFs with retry logic for memory errors
 async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: string, groupNum: number, totalGroups: number): Promise<string> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
   console.log(`Merging group ${groupNum}/${totalGroups} (${chunkPaths.length} files) → ${outputPath}`);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout per group
+  let retryCount = 0;
+  const maxRetries = 2;
 
-  try {
-    const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-pdf-chunks`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-        'apikey': supabaseAnonKey
-      },
-      body: JSON.stringify({
-        sessionId,
-        processedChunkPaths: chunkPaths,
-        totalChunks: chunkPaths.length,
-        outputPath
-      }),
-      signal: controller.signal
-    });
+  while (retryCount <= maxRetries) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout per group
 
-    clearTimeout(timeoutId);
+    try {
+      const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-pdf-chunks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'apikey': supabaseAnonKey
+        },
+        body: JSON.stringify({
+          sessionId,
+          processedChunkPaths: chunkPaths,
+          totalChunks: chunkPaths.length,
+          outputPath
+        }),
+        signal: controller.signal
+      });
 
-    if (!mergeResponse.ok) {
-      const errorText = await mergeResponse.text();
-      throw new Error(`Failed to merge group ${groupNum}: ${mergeResponse.status} - ${errorText}`);
+      clearTimeout(timeoutId);
+
+      if (!mergeResponse.ok) {
+        const errorText = await mergeResponse.text();
+        const errorMessage = `${mergeResponse.status} - ${errorText}`;
+
+        // Check if it's a memory allocation error
+        const isMemoryError = errorText.includes('Array buffer allocation failed') ||
+                            errorText.includes('out of memory') ||
+                            errorText.includes('OOM');
+
+        if (isMemoryError && chunkPaths.length > 2 && retryCount < maxRetries) {
+          console.warn(`⚠️ Memory error merging ${chunkPaths.length} files. Splitting into smaller groups...`);
+
+          // Split into two groups and merge recursively
+          const midpoint = Math.ceil(chunkPaths.length / 2);
+          const firstHalf = chunkPaths.slice(0, midpoint);
+          const secondHalf = chunkPaths.slice(midpoint);
+
+          const tempPath1 = `${sessionId}/intermediate/split_${groupNum}_a.pdf`;
+          const tempPath2 = `${sessionId}/intermediate/split_${groupNum}_b.pdf`;
+
+          console.log(`Splitting merge: ${firstHalf.length} + ${secondHalf.length} files`);
+
+          // Merge each half
+          await mergeGroup(firstHalf, tempPath1, sessionId, groupNum, totalGroups);
+          await mergeGroup(secondHalf, tempPath2, sessionId, groupNum, totalGroups);
+
+          // Now merge the two halves
+          const finalResult = await mergeGroup([tempPath1, tempPath2], outputPath, sessionId, groupNum, totalGroups);
+
+          // Clean up temp files
+          if (supabase) {
+            await supabase.storage
+              .from('processed-pdfs')
+              .remove([tempPath1, tempPath2])
+              .catch(err => console.warn('Failed to cleanup split merge files:', err));
+          }
+
+          return finalResult;
+        }
+
+        throw new Error(`Failed to merge group ${groupNum}: ${errorMessage}`);
+      }
+
+      await mergeResponse.json(); // Consume the response
+      console.log(`✓ Group ${groupNum}/${totalGroups} merged successfully`);
+      return outputPath;
+
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isMemoryError = errorMessage.includes('Array buffer allocation failed') ||
+                          errorMessage.includes('out of memory') ||
+                          errorMessage.includes('OOM');
+
+      if (isMemoryError && chunkPaths.length > 2 && retryCount < maxRetries) {
+        retryCount++;
+        console.warn(`Memory error (attempt ${retryCount}/${maxRetries}). Retrying with split merge...`);
+        continue;
+      }
+
+      throw error;
     }
-
-    await mergeResponse.json(); // Consume the response
-    console.log(`✓ Group ${groupNum}/${totalGroups} merged successfully`);
-    return outputPath;
-
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
   }
+
+  throw new Error(`Failed to merge group ${groupNum} after ${maxRetries} retries`);
 }
 
 // Progressive chunking with adaptive sizing and retry logic

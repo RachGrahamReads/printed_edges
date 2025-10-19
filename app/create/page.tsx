@@ -747,6 +747,19 @@ export default function CreatePage() {
   const handlePdfUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && file.type === 'application/pdf') {
+      // Check file size (warn if > 50MB, hard limit at 100MB)
+      const fileSizeMB = file.size / (1024 * 1024);
+
+      if (fileSizeMB > 100) {
+        setPreviewError(`PDF file is too large (${fileSizeMB.toFixed(1)}MB). Maximum supported size is 100MB. Please use a smaller PDF or contact support for assistance with large files.`);
+        return;
+      }
+
+      if (fileSizeMB > 50) {
+        console.warn(`⚠️ Large PDF detected (${fileSizeMB.toFixed(1)}MB). Processing may take longer than usual.`);
+        // Don't block, just warn in console
+      }
+
       setPdfFile(file);
       setShowPreview(false);
       setPreviewError(null);
@@ -755,6 +768,11 @@ export default function CreatePage() {
 
       try {
         await loadPdfForPreview(file);
+
+        // Check page count after loading
+        if (pdfDocument && pdfDocument.numPages > 500) {
+          console.warn(`⚠️ Large PDF detected (${pdfDocument.numPages} pages). Processing may take several minutes.`);
+        }
       } catch (error) {
         console.error('Error loading PDF for preview:', error);
         setPreviewError(`Failed to load PDF: ${error.message}`);

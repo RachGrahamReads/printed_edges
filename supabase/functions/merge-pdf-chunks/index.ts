@@ -74,12 +74,28 @@ serve(async (req) => {
       throw new Error(`Mismatch: expected ${requestData.totalChunks} chunks, got ${requestData.processedChunkPaths.length}`);
     }
 
+    // Warn about very large merges
+    if (requestData.totalChunks > 500) {
+      console.warn(`⚠️ LARGE MERGE: ${requestData.totalChunks} chunks. This may approach memory limits.`);
+    }
+
+    if (requestData.totalChunks > 1000) {
+      console.error(`❌ CRITICAL: ${requestData.totalChunks} chunks exceeds recommended limits. Risk of failure.`);
+      throw new Error(
+        `PDF is too large to process (${requestData.totalChunks} pages). ` +
+        `Maximum recommended size is 500 pages. ` +
+        `Please contact support for assistance with large files.`
+      );
+    }
+
     // Create the final merged PDF
-    const mergedPdf = await PDFDocument.create();
+    // MEMORY OPTIMIZATION: Instead of loading all chunks and copying pages,
+    // we merge in smaller batches and save intermediate PDFs to avoid memory buildup
+    let mergedPdf = await PDFDocument.create();
     let totalPages = 0;
 
-    // Process chunks in batches to reduce memory usage
-    const BATCH_SIZE = 3; // Process 3 chunks at a time to minimize memory pressure
+    // Reduce batch size to minimize memory pressure from embedded resources
+    const BATCH_SIZE = 2; // Process 2 chunks at a time, then save intermediate
     const batches = [];
     for (let i = 0; i < requestData.totalChunks; i += BATCH_SIZE) {
       batches.push({
@@ -89,8 +105,9 @@ serve(async (req) => {
     }
 
     console.log(`Processing ${requestData.totalChunks} chunks in ${batches.length} batches of up to ${BATCH_SIZE}`);
+    console.log(`Memory optimization: Saving intermediate PDFs every ${BATCH_SIZE} chunks to prevent memory buildup`);
 
-    // Process each batch
+    // Process each batch and save intermediate PDFs to free memory
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
       console.log(`Processing merge batch ${batchIndex + 1}/${batches.length} (chunks ${batch.start + 1}-${batch.end})`);
@@ -151,9 +168,35 @@ serve(async (req) => {
         }
       }
 
-      // Brief pause between batches to allow memory cleanup
+      // CRITICAL MEMORY FIX: After each batch, save and reload the PDF to release memory
+      // This prevents memory buildup from embedded resources in copyPages
       if (batchIndex < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 200));
+        console.log(`Saving intermediate PDF to free memory (batch ${batchIndex + 1}/${batches.length})...`);
+
+        // Create a scoped block to ensure intermediateBytes gets garbage collected
+        {
+          const intermediateBytes = await mergedPdf.save({
+            useObjectStreams: false,
+            addDefaultPage: false,
+            objectsPerTick: 50,
+            updateFieldAppearances: false,
+          });
+
+          console.log(`Intermediate PDF saved (${intermediateBytes.length} bytes). Reloading to clear memory...`);
+
+          // Release the old PDF from memory and load the compacted version
+          mergedPdf = await PDFDocument.load(intermediateBytes);
+        }
+        // intermediateBytes is now out of scope and eligible for garbage collection
+
+        // Give the runtime a moment to garbage collect
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        if ((globalThis as any).gc) {
+          (globalThis as any).gc();
+        }
+
+        console.log(`Memory reset complete. Continuing merge...`);
       }
     }
 
