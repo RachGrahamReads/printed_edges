@@ -1590,11 +1590,16 @@ export default function CreatePage() {
 
                   {/* Progress Bar */}
                   {isProcessing && (
-                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
-                        style={{ width: `${processingProgress}%` }}
-                      ></div>
+                    <div className="mt-2 space-y-2">
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                          style={{ width: `${processingProgress}%` }}
+                        ></div>
+                      </div>
+                      <p className="text-sm text-gray-600 text-center">
+                        Processing may take several minutes for large PDFs. Please do not close this page.
+                      </p>
                     </div>
                   )}
 
