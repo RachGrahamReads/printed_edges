@@ -16,6 +16,7 @@ interface MergeRequest {
   // For resumable merges after timeout
   resumeFromPath?: string; // If provided, load this PDF and continue merging
   startIndex?: number; // Which chunk index to start from (for resume)
+  forceSlowMerge?: boolean; // Force 1-at-a-time merge for complex PDFs with large images/fonts
 }
 
 // Retry utility with exponential backoff
@@ -122,11 +123,23 @@ serve(async (req) => {
       mergedPdf = await PDFDocument.create();
     }
 
-    // Adaptive batch size based on chunk count
+    // Adaptive batch size based on chunk count and complexity
     // For merging Stage 2 PDFs (few large files), use larger batch to avoid timeout
     // For merging single-page chunks (many small files), use smaller batch for memory
+    // For complex PDFs with large images/fonts, force batch size of 1
     const isMergingLargeFiles = requestData.totalChunks <= 10;
-    const BATCH_SIZE = isMergingLargeFiles ? requestData.totalChunks : 2; // No batching for ≤10 files
+    const isComplexPdf = requestData.forceSlowMerge === true;
+
+    let BATCH_SIZE: number;
+    if (isComplexPdf) {
+      BATCH_SIZE = 1; // Force 1-at-a-time for complex PDFs with large images/fonts
+      console.log(`🐌 COMPLEX PDF MODE: Processing 1 file at a time due to large embedded images/fonts`);
+    } else if (isMergingLargeFiles) {
+      BATCH_SIZE = requestData.totalChunks; // No batching for ≤10 files
+    } else {
+      BATCH_SIZE = 2; // Default: 2 chunks at a time
+    }
+
     const batches = [];
     for (let i = startFromIndex; i < requestData.totalChunks; i += BATCH_SIZE) {
       batches.push({
@@ -136,7 +149,9 @@ serve(async (req) => {
     }
 
     console.log(`Processing ${requestData.totalChunks} chunks in ${batches.length} batches of up to ${BATCH_SIZE}`);
-    if (isMergingLargeFiles) {
+    if (isComplexPdf) {
+      console.log(`Complex PDF optimization: Merging 1 chunk at a time + saving intermediate PDFs to minimize CPU usage`);
+    } else if (isMergingLargeFiles) {
       console.log(`Large file merge detected (≤10 files). Using single-pass merge without intermediate saves for speed.`);
     } else {
       console.log(`Memory optimization: Saving intermediate PDFs every ${BATCH_SIZE} chunks to prevent memory buildup`);
@@ -205,7 +220,8 @@ serve(async (req) => {
 
       // CRITICAL MEMORY FIX: After each batch, save and reload the PDF to release memory
       // This prevents memory buildup from embedded resources in copyPages
-      if (batchIndex < batches.length - 1) {
+      // For complex PDFs, ALWAYS save (even on last batch) to prevent CPU timeout
+      if (batchIndex < batches.length - 1 || isComplexPdf) {
         console.log(`Saving intermediate PDF to free memory (batch ${batchIndex + 1}/${batches.length})...`);
 
         // Create a scoped block to ensure intermediateBytes gets garbage collected

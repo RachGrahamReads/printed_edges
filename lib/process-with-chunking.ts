@@ -421,26 +421,50 @@ export async function processPDFWithChunking(
     if (errorMessage.includes('Array buffer allocation failed') || errorMessage.includes('out of memory')) {
       throw new Error(
         `Your PDF is too large to process. This typically happens with PDFs over 100MB or 500+ pages. ` +
-        `Please try a smaller PDF or contact support for assistance with large files.`
+        `Please try processing again with a smaller PDF. If problems persist, please contact support.`
       );
     }
 
     if (errorMessage.includes('timeout') || errorMessage.includes('504')) {
       throw new Error(
-        `Processing timed out. Your PDF may be too complex. ` +
-        `If the problem persists, please contact support.`
+        `Processing timed out. This may be a temporary issue. ` +
+        `Please try processing again. If problems persist, please contact support.`
       );
     }
 
     if (errorMessage.includes('WORKER_LIMIT')) {
       throw new Error(
-        `Our servers are currently busy. Please wait a moment and try again. ` +
-        `If the problem persists, please contact support.`
+        `Our servers are currently busy. ` +
+        `Please wait a moment and try processing again. If problems persist, please contact support.`
       );
     }
 
-    // Re-throw original error if we don't have a specific message
-    throw error;
+    if (errorMessage.includes('Failed to upload PDF') || errorMessage.includes('Failed to download')) {
+      throw new Error(
+        `Network error during file transfer. ` +
+        `Please check your connection and try again. If problems persist, please contact support.`
+      );
+    }
+
+    if (errorMessage.includes('Failed to process page') || errorMessage.includes('Failed to merge')) {
+      throw new Error(
+        `An error occurred during PDF processing. ` +
+        `Please try processing again. If problems persist, please contact support.`
+      );
+    }
+
+    // Re-throw with generic retry message if we don't have a specific error
+    if (error instanceof Error) {
+      throw new Error(
+        `Processing failed: ${error.message}. ` +
+        `Please try again. If problems persist, please contact support.`
+      );
+    }
+
+    throw new Error(
+      `An unexpected error occurred. ` +
+      `Please try processing again. If problems persist, please contact support.`
+    );
   }
 }
 
@@ -740,11 +764,21 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 }
 
 // Helper function to merge a group of PDFs with retry logic for memory errors
-async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: string, groupNum: number, totalGroups: number): Promise<string> {
+async function mergeGroup(
+  chunkPaths: string[],
+  outputPath: string,
+  sessionId: string,
+  groupNum: number,
+  totalGroups: number,
+  forceSlowMerge: boolean = false // Flag to indicate PDF has complex images/fonts
+): Promise<string> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
   console.log(`Merging group ${groupNum}/${totalGroups} (${chunkPaths.length} files) → ${outputPath}`);
+  if (forceSlowMerge) {
+    console.log(`⚠️ COMPLEX PDF MODE: Using slow merge strategy (1-at-a-time) to handle large images/fonts`);
+  }
 
   let retryCount = 0;
   const maxRetries = 2;
@@ -765,7 +799,8 @@ async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: s
           sessionId,
           processedChunkPaths: chunkPaths,
           totalChunks: chunkPaths.length,
-          outputPath
+          outputPath,
+          forceSlowMerge // Pass flag to Edge Function
         }),
         signal: controller.signal
       });
@@ -782,18 +817,20 @@ async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: s
                             errorText.includes('OOM');
 
         const isWorkerLimit = errorText.includes('WORKER_LIMIT') ||
-                             errorText.includes('not having enough compute resources');
+                             errorText.includes('not having enough compute resources') ||
+                             errorText.includes('CPU time limit exceeded');
 
         // For WORKER_LIMIT or memory errors with multiple files, split the merge
         // Even 2 files can be too large, so we allow splitting down to 1 file per merge
         if ((isMemoryError || isWorkerLimit) && chunkPaths.length >= 2 && retryCount < maxRetries) {
           if (isWorkerLimit) {
-            console.warn(`⚠️ WORKER_LIMIT error (timeout/CPU exhausted) merging ${chunkPaths.length} files. Splitting into smaller groups...`);
+            console.warn(`⚠️ WORKER_LIMIT error (CPU exhausted - likely large embedded images/fonts)`);
+            console.warn(`⚠️ Splitting ${chunkPaths.length} files into smaller groups and enabling slow merge mode...`);
           } else {
             console.warn(`⚠️ Memory error merging ${chunkPaths.length} files. Splitting into smaller groups...`);
           }
 
-          // Split into two groups and merge recursively
+          // Split into two groups and merge recursively WITH slow merge enabled
           const midpoint = Math.ceil(chunkPaths.length / 2);
           const firstHalf = chunkPaths.slice(0, midpoint);
           const secondHalf = chunkPaths.slice(midpoint);
@@ -801,14 +838,14 @@ async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: s
           const tempPath1 = `${sessionId}/intermediate/split_${groupNum}_a.pdf`;
           const tempPath2 = `${sessionId}/intermediate/split_${groupNum}_b.pdf`;
 
-          console.log(`Splitting merge: ${firstHalf.length} + ${secondHalf.length} files`);
+          console.log(`Splitting merge: ${firstHalf.length} + ${secondHalf.length} files (slow merge: enabled)`);
 
-          // Merge each half
-          await mergeGroup(firstHalf, tempPath1, sessionId, groupNum, totalGroups);
-          await mergeGroup(secondHalf, tempPath2, sessionId, groupNum, totalGroups);
+          // Merge each half with slow merge enabled
+          await mergeGroup(firstHalf, tempPath1, sessionId, groupNum, totalGroups, true);
+          await mergeGroup(secondHalf, tempPath2, sessionId, groupNum, totalGroups, true);
 
-          // Now merge the two halves
-          const finalResult = await mergeGroup([tempPath1, tempPath2], outputPath, sessionId, groupNum, totalGroups);
+          // Now merge the two halves with slow merge enabled
+          const finalResult = await mergeGroup([tempPath1, tempPath2], outputPath, sessionId, groupNum, totalGroups, true);
 
           // Clean up temp files
           if (supabase) {
@@ -837,7 +874,8 @@ async function mergeGroup(chunkPaths: string[], outputPath: string, sessionId: s
                           errorMessage.includes('OOM');
 
       const isWorkerLimit = errorMessage.includes('WORKER_LIMIT') ||
-                           errorMessage.includes('not having enough compute resources');
+                           errorMessage.includes('not having enough compute resources') ||
+                           errorMessage.includes('CPU time limit exceeded');
 
       if ((isMemoryError || isWorkerLimit) && chunkPaths.length >= 2 && retryCount < maxRetries) {
         retryCount++;
