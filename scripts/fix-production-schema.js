@@ -1,8 +1,14 @@
 const { createClient } = require('@supabase/supabase-js')
 
 // Production credentials from environment
-const supabaseUrl = 'https://gsndpkiedjojlqpjdwgu.supabase.co'
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdzbmRwa2llZGpvamxxcGpkd2d1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcyNjc1MzE5NSwiZXhwIjoyMDQyMzI5MTk1fQ.xYiWH7fgaWnlOp8oLGSOwRwC6h5jU4yHOOKJ3bfEfh4'
+const supabaseUrl = process.env.SUPABASE_URL || 'https://gsndpkiedjojlqpjdwgu.supabase.co'
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!supabaseServiceKey) {
+  console.error('❌ SUPABASE_SERVICE_ROLE_KEY environment variable is required')
+  console.error('Usage: SUPABASE_SERVICE_ROLE_KEY=your_key node scripts/fix-production-schema.js')
+  process.exit(1)
+}
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
