@@ -585,104 +585,38 @@ async function clearCheckpoints(sessionId: string) {
 
 // Comprehensive cleanup function to remove all temporary files after successful download
 async function cleanupSession(sessionId: string, finalPdfPath: string, isDesignBased: boolean) {
-  if (!supabase) {
-    console.warn('Cannot cleanup: Supabase client not initialized');
-    return;
-  }
-
-  const filesToDelete: string[] = [];
-
   try {
-    // 1. Delete the final processed PDF
-    filesToDelete.push(finalPdfPath);
+    console.log(`🧹 Calling cleanup API for session: ${sessionId}`);
 
-    // 2. Delete the original uploaded PDF
-    const originalPdfPath = `${sessionId}/original.pdf`;
-    filesToDelete.push(originalPdfPath);
+    // Call the cleanup API endpoint which has service role permissions
+    const response = await fetch('/api/cleanup-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sessionId,
+        finalPdfPath,
+        isDesignBased
+      })
+    });
 
-    // 3. Delete all chunk PDFs (individual page chunks)
-    // List all files in the session's processed-pdfs folder
-    const { data: processedFiles } = await supabase.storage
-      .from('processed-pdfs')
-      .list(sessionId, { limit: 1000 });
-
-    if (processedFiles && processedFiles.length > 0) {
-      processedFiles.forEach(file => {
-        const fullPath = `${sessionId}/${file.name}`;
-        if (!filesToDelete.includes(fullPath)) {
-          filesToDelete.push(fullPath);
-        }
-      });
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.warn('Cleanup API returned error:', errorData);
+      throw new Error(errorData.error || 'Cleanup failed');
     }
 
-    // Also check intermediate folder for any leftover files
-    const { data: intermediateFiles } = await supabase.storage
-      .from('processed-pdfs')
-      .list(`${sessionId}/intermediate`, { limit: 1000 });
+    const result = await response.json();
+    console.log(`✓ Cleanup completed:`, {
+      deletedPdfCount: result.deletedPdfCount,
+      deletedEdgeCount: result.deletedEdgeCount,
+      preservedEdgeImages: result.preservedEdgeImages,
+      errors: result.errors
+    });
 
-    if (intermediateFiles && intermediateFiles.length > 0) {
-      intermediateFiles.forEach(file => {
-        filesToDelete.push(`${sessionId}/intermediate/${file.name}`);
-      });
-    }
-
-    // 4. Delete edge images ONLY if this is session-based (not a saved design)
-    if (!isDesignBased) {
-      const { data: edgeFiles } = await supabase.storage
-        .from('edge-images')
-        .list(sessionId, { limit: 100 });
-
-      if (edgeFiles && edgeFiles.length > 0) {
-        edgeFiles.forEach(file => {
-          filesToDelete.push(`${sessionId}/${file.name}`);
-        });
-      }
-    }
-
-    // Execute cleanup in batches
-    console.log(`🗑️ Cleaning up ${filesToDelete.length} temporary files...`);
-
-    // Delete from processed-pdfs bucket
-    const processedPdfFiles = filesToDelete.filter(f => !f.includes('edge-'));
-    if (processedPdfFiles.length > 0) {
-      const { error: processedError } = await supabase.storage
-        .from('processed-pdfs')
-        .remove(processedPdfFiles);
-
-      if (processedError) {
-        console.warn('Failed to cleanup processed-pdfs:', processedError.message);
-      } else {
-        console.log(`✓ Cleaned up ${processedPdfFiles.length} files from processed-pdfs bucket`);
-      }
-    }
-
-    // Delete from pdfs bucket (original PDF)
-    const { error: pdfError } = await supabase.storage
-      .from('pdfs')
-      .remove([originalPdfPath]);
-
-    if (pdfError) {
-      console.warn('Failed to cleanup original PDF:', pdfError.message);
-    } else {
-      console.log(`✓ Cleaned up original PDF from pdfs bucket`);
-    }
-
-    // Delete edge images ONLY if session-based
-    if (!isDesignBased) {
-      const edgeImageFiles = filesToDelete.filter(f => f.includes('edge-'));
-      if (edgeImageFiles.length > 0) {
-        const { error: edgeError } = await supabase.storage
-          .from('edge-images')
-          .remove(edgeImageFiles);
-
-        if (edgeError) {
-          console.warn('Failed to cleanup edge images:', edgeError.message);
-        } else {
-          console.log(`✓ Cleaned up ${edgeImageFiles.length} edge images from edge-images bucket`);
-        }
-      }
-    } else {
-      console.log(`ℹ️ Preserving edge images for saved design`);
+    if (result.errors && result.errors.length > 0) {
+      console.warn('Cleanup completed with some errors:', result.errors);
     }
 
     console.log(`✅ Session cleanup complete`);

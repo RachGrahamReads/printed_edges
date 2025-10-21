@@ -174,6 +174,18 @@ export async function POST(req: NextRequest) {
           // Don't fail the request if counter update fails
         }
 
+        // Clean up temporary files after successful processing (large PDF path)
+        // This runs asynchronously and doesn't block the response
+        fetch('/api/cleanup-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            finalPdfPath: result.outputPdfPath?.replace(/^.*\/processed-pdfs\//, '') || null,
+            isDesignBased: true // Preserve edge images for saved designs
+          })
+        }).catch(err => console.warn('Cleanup failed:', err));
+
         return NextResponse.json({
           success: true,
           outputPdfUrl: result.outputPdfUrl,
