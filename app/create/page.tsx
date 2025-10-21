@@ -794,13 +794,10 @@ export default function CreatePage() {
         await logPDFComplexity(sessionId, complexity, user?.id);
 
         // Show warning for medium/high complexity PDFs
-        // Block high-risk PDFs entirely (score 80+)
-        if (complexity.riskLevel === 'high') {
+        // Allow all PDFs to process while collecting data - no hard blocking yet
+        if (complexity.riskLevel === 'high' || complexity.riskLevel === 'medium') {
           setShowComplexityWarning(true);
-          setIsPdfBlocked(true);
-        } else if (complexity.riskLevel === 'medium') {
-          setShowComplexityWarning(true);
-          setIsPdfBlocked(false);
+          setIsPdfBlocked(false); // Allow all PDFs while collecting data
         } else {
           setShowComplexityWarning(false);
           setIsPdfBlocked(false);

@@ -21,6 +21,17 @@ export async function logPDFComplexity(
         file_size: complexity.fileSize,
         file_size_mb: complexity.fileSizeMB,
         page_count: complexity.pageCount,
+        file_size_per_page_mb: complexity.fileSizePerPageMB,
+
+        // PDF Document Metadata
+        pdf_version: complexity.pdfVersion || null,
+        is_linearized: complexity.isLinearized || false,
+        creator: complexity.creator || null,
+        producer: complexity.producer || null,
+        creation_date: complexity.creationDate || null,
+        is_acro_form_present: complexity.isAcroFormPresent || false,
+        is_xfa_present: complexity.isXFAPresent || false,
+
         avg_page_width: complexity.avgPageWidth,
         avg_page_height: complexity.avgPageHeight,
         has_variable_page_sizes: complexity.hasVariablePageSizes,

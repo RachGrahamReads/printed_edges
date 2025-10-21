@@ -10,6 +10,16 @@ export interface PDFComplexityMetrics {
   fileSize: number;           // In bytes
   fileSizeMB: number;        // In megabytes
   pageCount: number;
+  fileSizePerPageMB: number; // MB per page - KEY indicator of flattening
+
+  // PDF Document Metadata (from getMetadata())
+  pdfVersion?: string;        // PDF format version (e.g., "1.7")
+  isLinearized?: boolean;     // Optimized for web streaming
+  creator?: string;           // Creator application (e.g., "Adobe InDesign")
+  producer?: string;          // PDF producer (e.g., "Adobe PDF Library")
+  creationDate?: string;      // When PDF was created
+  isAcroFormPresent?: boolean; // Has interactive forms
+  isXFAPresent?: boolean;     // Has XML Forms Architecture
 
   // Page properties
   avgPageWidth: number;      // In points
@@ -28,6 +38,11 @@ export interface PDFComplexityMetrics {
 
   // Detailed image info
   largeImageCount: number;   // Images that might be high-res
+
+  // Compression analysis
+  dominantImageCompression?: string; // Most common: FlateDecode, DCTDecode, etc.
+  hasFlateEncoding?: boolean;  // Uses Flate (ZIP) compression
+  hasDCTEncoding?: boolean;    // Uses JPEG (DCT) compression
 
   // Complexity score (0-100, higher = more complex)
   complexityScore: number;
@@ -53,11 +68,32 @@ export async function analyzePDFComplexity(file: File): Promise<PDFComplexityMet
     const pdfjsLib = (window as any).pdfjsLib;
     const pdf = await pdfjsLib.getDocument(fileUrl).promise;
 
+    // Get PDF metadata
+    let metadata: any = null;
+    try {
+      const metadataObj = await pdf.getMetadata();
+      metadata = metadataObj.info;
+    } catch (e) {
+      console.warn('Could not retrieve PDF metadata:', e);
+    }
+
     // Initialize metrics
+    const fileSizeMB = Math.round(file.size / (1024 * 1024) * 100) / 100;
     const metrics: Partial<PDFComplexityMetrics> = {
       fileSize: file.size,
-      fileSizeMB: Math.round(file.size / (1024 * 1024) * 100) / 100,
+      fileSizeMB,
       pageCount: pdf.numPages,
+      fileSizePerPageMB: Math.round((fileSizeMB / pdf.numPages) * 10000) / 10000, // 4 decimal places
+
+      // Extract PDF metadata
+      pdfVersion: metadata?.PDFFormatVersion || undefined,
+      isLinearized: metadata?.IsLinearized || false,
+      creator: metadata?.Creator || undefined,
+      producer: metadata?.Producer || undefined,
+      creationDate: metadata?.CreationDate || undefined,
+      isAcroFormPresent: metadata?.IsAcroFormPresent || false,
+      isXFAPresent: metadata?.IsXFAPresent || false,
+
       avgPageWidth: 0,
       avgPageHeight: 0,
       hasVariablePageSizes: false,
@@ -245,13 +281,14 @@ function calculateComplexityScore(metrics: PDFComplexityMetrics): {
   }
 
   // Determine risk level based on score
-  // HIGH (80+): Block - guaranteed to fail (non-flattened with fonts+images+transparency)
-  // MEDIUM (40-79): Warn - might fail, let user try
-  // LOW (0-39): Allow - likely to succeed
+  // Adjusted thresholds - collecting more data before implementing hard blocks
+  // HIGH (70+): Strong warning - likely to fail based on compression + complexity
+  // MEDIUM (35-69): Warning - might fail, let user try
+  // LOW (0-34): No warning - likely to succeed
   let riskLevel: 'low' | 'medium' | 'high';
-  if (score >= 80) {
+  if (score >= 70) {
     riskLevel = 'high';
-  } else if (score >= 40) {
+  } else if (score >= 35) {
     riskLevel = 'medium';
   } else {
     riskLevel = 'low';
@@ -287,10 +324,19 @@ async function loadPDFJS(): Promise<void> {
  * Format complexity metrics for logging/display
  */
 export function formatComplexityReport(metrics: PDFComplexityMetrics): string {
+  const metadataSection = [
+    metrics.pdfVersion ? `PDF Version: ${metrics.pdfVersion}` : null,
+    metrics.creator ? `Creator: ${metrics.creator}` : null,
+    metrics.producer ? `Producer: ${metrics.producer}` : null,
+    metrics.isLinearized ? 'Linearized: Yes (web optimized)' : null,
+    metrics.isAcroFormPresent ? 'Has Forms: Yes' : null,
+  ].filter(Boolean).join('\n- ');
+
   return `
 PDF Complexity Analysis:
-- File: ${metrics.fileSizeMB}MB, ${metrics.pageCount} pages
-- Fonts: ${metrics.totalFonts} (${metrics.fontNames.join(', ') || 'none'})
+- File: ${metrics.fileSizeMB}MB, ${metrics.pageCount} pages (${metrics.fileSizePerPageMB} MB/page)
+${metadataSection ? '- ' + metadataSection : ''}
+- Fonts: ${metrics.totalFonts} (${metrics.fontNames.slice(0, 5).join(', ')}${metrics.fontNames.length > 5 ? '...' : ''})
 - Images: ~${metrics.totalImages} total (${metrics.largeImageCount} potentially large)
 - Transparency: ${metrics.hasTransparency ? 'Yes' : 'No'}
 - Annotations: ${metrics.hasAnnotations ? 'Yes' : 'No'}

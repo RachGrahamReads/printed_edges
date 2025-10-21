@@ -9,6 +9,16 @@ CREATE TABLE IF NOT EXISTS public.pdf_complexity_logs (
     file_size BIGINT NOT NULL, -- in bytes
     file_size_mb DECIMAL(10, 2) NOT NULL,
     page_count INTEGER NOT NULL,
+    file_size_per_page_mb DECIMAL(10, 6), -- KEY indicator of flattening vs compression
+
+    -- PDF Document Metadata
+    pdf_version TEXT, -- e.g., "1.7"
+    is_linearized BOOLEAN DEFAULT FALSE, -- Optimized for web streaming
+    creator TEXT, -- Creator application (e.g., "Adobe InDesign")
+    producer TEXT, -- PDF producer (e.g., "Adobe PDF Library")
+    creation_date TEXT, -- When PDF was created
+    is_acro_form_present BOOLEAN DEFAULT FALSE, -- Has interactive forms
+    is_xfa_present BOOLEAN DEFAULT FALSE, -- Has XML Forms Architecture
 
     -- Page properties
     avg_page_width DECIMAL(10, 2),
