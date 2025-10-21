@@ -22,6 +22,8 @@ import { SiteFooter } from "@/components/site-footer";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { processPDFWithChunking } from '@/lib/process-with-chunking';
+import { analyzePDFComplexity, formatComplexityReport, type PDFComplexityMetrics } from '@/lib/pdf-complexity-analyzer';
+import PDFComplexityWarningModal from '@/components/pdf-complexity-warning-modal';
 import { HelpButton } from "@/components/help-button";
 import { HowToGuide } from "@/components/how-to-guide";
 import { HowToGuideLink } from "@/components/how-to-guide-link";
@@ -65,6 +67,8 @@ export default function CreatePage() {
   const [isSavingDesign, setIsSavingDesign] = useState(false);
   const [savedDesignName, setSavedDesignName] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [pdfComplexity, setPdfComplexity] = useState<PDFComplexityMetrics | null>(null);
+  const [showComplexityWarning, setShowComplexityWarning] = useState(false);
 
 
   const scaleModeInfoRef = useRef<HTMLDivElement>(null);
@@ -765,11 +769,26 @@ export default function CreatePage() {
       setPreviewError(null);
       setCanvasReady(false);
       setIsLoadingPreview(true);
+      setPdfComplexity(null);
+      setShowComplexityWarning(false);
 
       try {
         await loadPdfForPreview(file);
 
-        // Check page count after loading
+        // Analyze PDF complexity for logging and warnings
+        console.log('📊 Analyzing PDF complexity...');
+        const complexity = await analyzePDFComplexity(file);
+        setPdfComplexity(complexity);
+
+        // Log detailed complexity report
+        console.log(formatComplexityReport(complexity));
+
+        // Show warning for medium/high complexity PDFs
+        if (complexity.riskLevel === 'medium' || complexity.riskLevel === 'high') {
+          setShowComplexityWarning(true);
+        }
+
+        // Check page count after loading (keep existing warning)
         if (pdfDocument && pdfDocument.numPages > 500) {
           console.warn(`⚠️ Large PDF detected (${pdfDocument.numPages} pages). Processing may take several minutes.`);
         }
@@ -2250,6 +2269,15 @@ export default function CreatePage() {
       </div>
 
       <SiteFooter />
+
+      {/* PDF Complexity Warning Modal */}
+      {pdfComplexity && (
+        <PDFComplexityWarningModal
+          isOpen={showComplexityWarning}
+          onClose={() => setShowComplexityWarning(false)}
+          complexity={pdfComplexity}
+        />
+      )}
     </div>
   );
 }
