@@ -418,52 +418,47 @@ export async function processPDFWithChunking(
     // Provide helpful error messages for common issues
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    if (errorMessage.includes('Array buffer allocation failed') || errorMessage.includes('out of memory')) {
+    // Log detailed error to console for debugging
+    console.error('Detailed error:', errorMessage);
+
+    // File size / complexity errors
+    if (errorMessage.includes('Array buffer allocation failed') ||
+        errorMessage.includes('out of memory') ||
+        errorMessage.includes('WORKER_LIMIT') ||
+        errorMessage.includes('not having enough compute resources') ||
+        errorMessage.includes('CPU time limit exceeded')) {
       throw new Error(
-        `Your PDF is too large to process. This typically happens with PDFs over 100MB or 500+ pages. ` +
-        `Please try processing again with a smaller PDF. If problems persist, please contact support.`
+        `Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.`
       );
     }
 
-    if (errorMessage.includes('timeout') || errorMessage.includes('504')) {
+    // Timeout errors
+    if (errorMessage.includes('timeout') || errorMessage.includes('504') || errorMessage.includes('503')) {
       throw new Error(
-        `Processing timed out. This may be a temporary issue. ` +
-        `Please try processing again. If problems persist, please contact support.`
+        `Processing timed out. Please flatten your PDF and try again. If problems persist, please contact us for support.`
       );
     }
 
-    if (errorMessage.includes('WORKER_LIMIT')) {
+    // Network errors
+    if (errorMessage.includes('Failed to upload PDF') ||
+        errorMessage.includes('Failed to download') ||
+        errorMessage.includes('Network connection lost') ||
+        errorMessage.includes('Failed to fetch')) {
       throw new Error(
-        `Our servers are currently busy. ` +
-        `Please wait a moment and try processing again. If problems persist, please contact support.`
+        `Network error. Please check your connection and try again. If problems persist, please contact us for support.`
       );
     }
 
-    if (errorMessage.includes('Failed to upload PDF') || errorMessage.includes('Failed to download')) {
-      throw new Error(
-        `Network error during file transfer. ` +
-        `Please check your connection and try again. If problems persist, please contact support.`
-      );
-    }
-
+    // Generic processing errors
     if (errorMessage.includes('Failed to process page') || errorMessage.includes('Failed to merge')) {
       throw new Error(
-        `An error occurred during PDF processing. ` +
-        `Please try processing again. If problems persist, please contact support.`
+        `Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.`
       );
     }
 
-    // Re-throw with generic retry message if we don't have a specific error
-    if (error instanceof Error) {
-      throw new Error(
-        `Processing failed: ${error.message}. ` +
-        `Please try again. If problems persist, please contact support.`
-      );
-    }
-
+    // Fallback for any other errors
     throw new Error(
-      `An unexpected error occurred. ` +
-      `Please try processing again. If problems persist, please contact support.`
+      `An error occurred during processing. Please try again. If problems persist, please contact us for support.`
     );
   }
 }

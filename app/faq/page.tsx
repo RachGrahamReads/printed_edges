@@ -77,6 +77,10 @@ export default function FAQPage() {
         {
           q: "What file type do I need?",
           a: "We need your book in PDF format. Make sure it's the final, formatted interior, as your edges will be designed to suit this PDF size and number of pages. The edge image should be in JPG or PNG format (PNG if you have a transparent background - see \"Why use a transparent background?\" in the help guide)."
+        },
+        {
+          q: "What if my PDF file won't process?",
+          a: "PDFs with embedded fonts or very large files (over 15MB) can sometimes fail to process. Try flattening your PDF first — this converts everything to simple images and almost always fixes the issue. You can flatten using Adobe Acrobat (Print to PDF), online tools like iLovePDF, or ask us for help at hello@rachgrahamreads.com."
         }
       ]
     },
