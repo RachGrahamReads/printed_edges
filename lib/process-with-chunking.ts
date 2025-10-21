@@ -28,7 +28,8 @@ export async function processPDFWithChunking(
   onPageWarning?: (warnings: Array<{ pageNumber: number; issue: string }>) => void
 ) {
   if (!supabase) {
-    throw new Error('Supabase client not initialized');
+    console.error('Supabase client not initialized');
+    throw new Error('System error. Please try again or contact us for support.');
   }
 
   // Get Supabase URL and key for Edge Function calls
@@ -162,7 +163,8 @@ export async function processPDFWithChunking(
       if (pdfError) {
         uploadRetryCount++;
         if (uploadRetryCount >= maxUploadRetries) {
-          throw new Error(`Failed to upload PDF after ${maxUploadRetries} attempts: ${pdfError.message}`);
+          console.error(`Failed to upload PDF after ${maxUploadRetries} attempts:`, pdfError.message);
+          throw new Error('Upload failed. Please check your connection and try again.');
         }
         console.warn(`PDF upload failed (attempt ${uploadRetryCount}/${maxUploadRetries}), retrying...`);
         await new Promise(resolve => setTimeout(resolve, 1000 * uploadRetryCount));
@@ -297,13 +299,15 @@ export async function processPDFWithChunking(
               console.log(`Page ${chunk.startPage + 1} failed (attempt ${retryCount}/${maxRetries}), retrying in ${backoffTime}ms...`);
               await new Promise(resolve => setTimeout(resolve, backoffTime));
             } else {
-              throw new Error(`Failed to process page ${chunk.startPage + 1}: ${chunkError}`);
+              console.error(`Failed to process page ${chunk.startPage + 1}:`, chunkError);
+              throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
             }
           }
         }
 
         if (!success) {
-          throw new Error(`Failed to process page ${chunk.startPage + 1} after ${maxRetries} attempts`);
+          console.error(`Failed to process page ${chunk.startPage + 1} after ${maxRetries} attempts`);
+          throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
         }
       });
 
@@ -359,7 +363,8 @@ export async function processPDFWithChunking(
 
       if (!mergeResponse.ok) {
         const errorText = await mergeResponse.text();
-        throw new Error(`Failed to merge PDF chunks: ${mergeResponse.status} - ${errorText}`);
+        console.error(`Failed to merge PDF chunks: ${mergeResponse.status} -`, errorText);
+        throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
       }
 
       const mergeData = await mergeResponse.json();
@@ -379,7 +384,8 @@ export async function processPDFWithChunking(
       if (downloadError) {
         downloadRetryCount++;
         if (downloadRetryCount >= maxDownloadRetries) {
-          throw new Error(`Failed to download final PDF after ${maxDownloadRetries} attempts: ${downloadError.message}`);
+          console.error(`Failed to download final PDF after ${maxDownloadRetries} attempts:`, downloadError.message);
+          throw new Error('Download failed. Please try again or contact us for support.');
         }
         console.warn(`PDF download failed (attempt ${downloadRetryCount}/${maxDownloadRetries}), retrying...`);
         await new Promise(resolve => setTimeout(resolve, 1000 * downloadRetryCount));
@@ -388,7 +394,10 @@ export async function processPDFWithChunking(
       }
     }
 
-    if (!finalPdf) throw new Error('Failed to download final PDF');
+    if (!finalPdf) {
+      console.error('Failed to download final PDF - no data returned');
+      throw new Error('Download failed. Please try again or contact us for support.');
+    }
 
     const pdfBuffer = await finalPdf.arrayBuffer();
 
@@ -530,7 +539,8 @@ async function clearCheckpoints(sessionId: string) {
 // Progressive merge function for large PDFs with checkpointing
 async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOutputPath: string): Promise<string> {
   if (!supabase) {
-    throw new Error('Supabase client not initialized');
+    console.error('Supabase client not initialized in progressiveMerge');
+    throw new Error('System error. Please try again or contact us for support.');
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -754,7 +764,8 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
     return finalPath;
   } else {
     // No intermediate paths - this shouldn't happen but handle gracefully
-    throw new Error('No intermediate PDFs were created. This indicates a problem with the chunking process.');
+    console.error('No intermediate PDFs were created. This indicates a problem with the chunking process.');
+    throw new Error('Processing error. Please try again or contact us for support.');
   }
 }
 
@@ -853,7 +864,8 @@ async function mergeGroup(
           return finalResult;
         }
 
-        throw new Error(`Failed to merge group ${groupNum}: ${errorMessage}`);
+        console.error(`Failed to merge group ${groupNum}:`, errorMessage);
+        throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
       }
 
       await mergeResponse.json(); // Consume the response
@@ -882,7 +894,8 @@ async function mergeGroup(
     }
   }
 
-  throw new Error(`Failed to merge group ${groupNum} after ${maxRetries} retries`);
+  console.error(`Failed to merge group ${groupNum} after ${maxRetries} retries`);
+  throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
 }
 
 // Progressive chunking with adaptive sizing and retry logic
@@ -960,12 +973,14 @@ async function progressiveChunking(
             continue;
           }
 
-          throw new Error(errorMessage);
+          console.error('Chunk-pdf error:', errorMessage);
+          throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
         }
 
         const chunkData = await chunkResponse.json();
         if (!chunkData || !chunkData.chunks) {
-          throw new Error('No chunks returned');
+          console.error('No chunks returned from chunk-pdf Edge Function');
+          throw new Error('Processing error. Please try again or contact us for support.');
         }
 
         allChunks.push(...chunkData.chunks);
@@ -1017,12 +1032,14 @@ async function progressiveChunking(
         }
 
         // Non-retryable error or max retries reached
-        throw new Error(`Failed to chunk batch (pages ${batch.startPage + 1}-${batch.endPage + 1}) after ${maxRetries} attempts: ${errorMessage}`);
+        console.error(`Failed to chunk batch (pages ${batch.startPage + 1}-${batch.endPage + 1}) after ${maxRetries} attempts:`, errorMessage);
+        throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
       }
     }
 
     if (!success) {
-      throw new Error(`Failed to chunk batch (pages ${batch.startPage + 1}-${batch.endPage + 1}) after ${maxRetries} attempts`);
+      console.error(`Failed to chunk batch (pages ${batch.startPage + 1}-${batch.endPage + 1}) after ${maxRetries} attempts`);
+      throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
     }
   }
 
