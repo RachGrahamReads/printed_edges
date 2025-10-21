@@ -36,9 +36,13 @@ export async function processPDFWithChunking(
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+  // Define sessionId at function scope for cleanup access
+  let sessionId = '';
+  let useDesignPaths = false;
+
   try {
-    const sessionId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const useDesignPaths = designId && userId;
+    sessionId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    useDesignPaths = !!(designId && userId);
 
     console.log(`Using ${useDesignPaths ? 'design-based' : 'session-based'} slice storage paths`);
 
@@ -401,12 +405,10 @@ export async function processPDFWithChunking(
 
     const pdfBuffer = await finalPdf.arrayBuffer();
 
-    // Clean up: Delete the processed PDF from storage after successful download
+    // Clean up: Delete all temporary files from storage after successful download
     // This prevents storage from filling up since we don't store PDFs long-term
-    await supabase.storage
-      .from('processed-pdfs')
-      .remove([finalPdfPath])
-      .catch(err => console.warn('Failed to cleanup processed PDF:', err));
+    console.log('🧹 Starting comprehensive session cleanup...');
+    await cleanupSession(sessionId, finalPdfPath, useDesignPaths);
 
     // Clear checkpoints on success
     await clearCheckpoints(sessionId);
@@ -423,6 +425,16 @@ export async function processPDFWithChunking(
 
   } catch (error) {
     console.error('Error processing PDF with chunking:', error);
+
+    // Clean up temporary files on error to prevent storage bloat
+    if (sessionId) {
+      try {
+        console.log('🧹 Cleaning up failed session files...');
+        await cleanupSession(sessionId, `${sessionId}/final.pdf`, useDesignPaths);
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup after error:', cleanupError);
+      }
+    }
 
     // Provide helpful error messages for common issues
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -533,6 +545,116 @@ async function clearCheckpoints(sessionId: string) {
     console.log(`🗑️ Cleared ${checkpointKeys.length} checkpoints`);
   } catch (err) {
     console.warn('Failed to clear checkpoints:', err);
+  }
+}
+
+// Comprehensive cleanup function to remove all temporary files after successful download
+async function cleanupSession(sessionId: string, finalPdfPath: string, isDesignBased: boolean) {
+  if (!supabase) {
+    console.warn('Cannot cleanup: Supabase client not initialized');
+    return;
+  }
+
+  const filesToDelete: string[] = [];
+
+  try {
+    // 1. Delete the final processed PDF
+    filesToDelete.push(finalPdfPath);
+
+    // 2. Delete the original uploaded PDF
+    const originalPdfPath = `${sessionId}/original.pdf`;
+    filesToDelete.push(originalPdfPath);
+
+    // 3. Delete all chunk PDFs (individual page chunks)
+    // List all files in the session's processed-pdfs folder
+    const { data: processedFiles } = await supabase.storage
+      .from('processed-pdfs')
+      .list(sessionId, { limit: 1000 });
+
+    if (processedFiles && processedFiles.length > 0) {
+      processedFiles.forEach(file => {
+        const fullPath = `${sessionId}/${file.name}`;
+        if (!filesToDelete.includes(fullPath)) {
+          filesToDelete.push(fullPath);
+        }
+      });
+    }
+
+    // Also check intermediate folder for any leftover files
+    const { data: intermediateFiles } = await supabase.storage
+      .from('processed-pdfs')
+      .list(`${sessionId}/intermediate`, { limit: 1000 });
+
+    if (intermediateFiles && intermediateFiles.length > 0) {
+      intermediateFiles.forEach(file => {
+        filesToDelete.push(`${sessionId}/intermediate/${file.name}`);
+      });
+    }
+
+    // 4. Delete edge images ONLY if this is session-based (not a saved design)
+    if (!isDesignBased) {
+      const { data: edgeFiles } = await supabase.storage
+        .from('edge-images')
+        .list(sessionId, { limit: 100 });
+
+      if (edgeFiles && edgeFiles.length > 0) {
+        edgeFiles.forEach(file => {
+          filesToDelete.push(`${sessionId}/${file.name}`);
+        });
+      }
+    }
+
+    // Execute cleanup in batches
+    console.log(`🗑️ Cleaning up ${filesToDelete.length} temporary files...`);
+
+    // Delete from processed-pdfs bucket
+    const processedPdfFiles = filesToDelete.filter(f => !f.includes('edge-'));
+    if (processedPdfFiles.length > 0) {
+      const { error: processedError } = await supabase.storage
+        .from('processed-pdfs')
+        .remove(processedPdfFiles);
+
+      if (processedError) {
+        console.warn('Failed to cleanup processed-pdfs:', processedError.message);
+      } else {
+        console.log(`✓ Cleaned up ${processedPdfFiles.length} files from processed-pdfs bucket`);
+      }
+    }
+
+    // Delete from pdfs bucket (original PDF)
+    const { error: pdfError } = await supabase.storage
+      .from('pdfs')
+      .remove([originalPdfPath]);
+
+    if (pdfError) {
+      console.warn('Failed to cleanup original PDF:', pdfError.message);
+    } else {
+      console.log(`✓ Cleaned up original PDF from pdfs bucket`);
+    }
+
+    // Delete edge images ONLY if session-based
+    if (!isDesignBased) {
+      const edgeImageFiles = filesToDelete.filter(f => f.includes('edge-'));
+      if (edgeImageFiles.length > 0) {
+        const { error: edgeError } = await supabase.storage
+          .from('edge-images')
+          .remove(edgeImageFiles);
+
+        if (edgeError) {
+          console.warn('Failed to cleanup edge images:', edgeError.message);
+        } else {
+          console.log(`✓ Cleaned up ${edgeImageFiles.length} edge images from edge-images bucket`);
+        }
+      }
+    } else {
+      console.log(`ℹ️ Preserving edge images for saved design`);
+    }
+
+    console.log(`✅ Session cleanup complete`);
+
+  } catch (error) {
+    console.warn('Error during session cleanup:', error);
+    // Don't throw - cleanup is best-effort
   }
 }
 
@@ -647,8 +769,10 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
     } catch (cleanupError) {
       console.warn('Failed to cleanup Stage 1 files:', cleanupError);
     }
+  }
 
-    // Final stage: Merge stage2 results
+  // Final stage: Merge stage2 results (whether from checkpoint or just created)
+  if (stage2Paths.length > 0) {
     // Safety check: If we have >2 Stage 2 files, use split strategy to avoid timeout
     // Merging 3+ large Stage 2 PDFs in one go can hit WORKER_LIMIT (CPU timeout)
     if (stage2Paths.length > 2) {
@@ -744,10 +868,17 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
       return finalPath;
     }
-  } else if (intermediatePaths.length > 0) {
-    // Final stage: Merge intermediate PDFs directly
+  } else {
+    // No stage 2 paths - merge intermediate PDFs directly
     console.log(`📊 Stage 2 SKIPPED: ${intermediatePaths.length} intermediate files ≤ threshold of 12`);
     console.log(`✅ Final stage: Merging ${intermediatePaths.length} intermediate PDFs into final PDF`);
+
+    if (intermediatePaths.length === 0) {
+      // No intermediate paths - this shouldn't happen but handle gracefully
+      console.error('No intermediate PDFs were created. This indicates a problem with the chunking process.');
+      throw new Error('Processing error. Please try again or contact us for support.');
+    }
+
     const finalPath = await mergeGroup(intermediatePaths, finalOutputPath, sessionId, 1, 1);
 
     // Clean up Stage 1 intermediate files - no longer needed
@@ -762,10 +893,6 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
     }
 
     return finalPath;
-  } else {
-    // No intermediate paths - this shouldn't happen but handle gracefully
-    console.error('No intermediate PDFs were created. This indicates a problem with the chunking process.');
-    throw new Error('Processing error. Please try again or contact us for support.');
   }
 }
 
