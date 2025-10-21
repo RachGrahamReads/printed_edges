@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { requireAdmin } from '@/lib/admin';
 
 export async function GET(
@@ -10,7 +10,8 @@ export async function GET(
     // Check admin access
     await requireAdmin();
 
-    const supabase = await createClient();
+    // Use service role client to access admin_user_overview (secured to service_role only)
+    const supabase = createServiceRoleClient();
     const userId = params.id;
 
     // Get user details
