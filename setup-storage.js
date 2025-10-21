@@ -2,15 +2,15 @@
 const { createClient } = require('@supabase/supabase-js')
 
 const supabaseUrl = process.env.SUPABASE_URL || 'https://gsndpkiedjojlqpjdwgu.supabase.co'
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
 
-if (!supabaseServiceKey) {
-  console.error('❌ SUPABASE_SERVICE_ROLE_KEY environment variable is required')
-  console.error('Usage: SUPABASE_SERVICE_ROLE_KEY=your_key node setup-storage.js')
+if (!supabaseSecretKey) {
+  console.error('❌ SUPABASE_SECRET_KEY environment variable is required')
+  console.error('Usage: SUPABASE_SECRET_KEY=your_key node setup-storage.js')
   process.exit(1)
 }
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+const supabase = createClient(supabaseUrl, supabaseSecretKey)
 
 async function setupStorage() {
   console.log('Setting up Supabase storage buckets...')
