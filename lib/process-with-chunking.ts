@@ -1,5 +1,6 @@
 import { createClient as createSupabaseClient } from './supabase/client';
 import { createAndStoreRawSlices, createAndStoreMaskedSlices, createAndStoreDesignSlices, createAndStoreDesignMaskedSlices } from './edge-slicer';
+import { markComplexityLogProcessingStarted, updateComplexityLogStatus, categorizeError } from './log-pdf-complexity';
 
 // Use the singleton client instance to avoid multiple GoTrueClient instances
 export const supabase = createSupabaseClient();
@@ -25,7 +26,8 @@ export async function processPDFWithChunking(
   designId?: string,
   userId?: string,
   onProgress?: (progress: number) => void,
-  onPageWarning?: (warnings: Array<{ pageNumber: number; issue: string }>) => void
+  onPageWarning?: (warnings: Array<{ pageNumber: number; issue: string }>) => void,
+  preGeneratedSessionId?: string
 ) {
   if (!supabase) {
     console.error('Supabase client not initialized');
@@ -41,7 +43,9 @@ export async function processPDFWithChunking(
   let useDesignPaths = false;
 
   try {
-    sessionId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Use pre-generated sessionId if provided (for complexity logging correlation)
+    // Otherwise generate a new one
+    sessionId = preGeneratedSessionId || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     useDesignPaths = !!(designId && userId);
 
     console.log(`Using ${useDesignPaths ? 'design-based' : 'session-based'} slice storage paths`);
@@ -94,6 +98,16 @@ export async function processPDFWithChunking(
     }
 
     console.log(`PDF dimensions: ${options.trimWidth}" × ${options.trimHeight}" = ${pdfWidth}pt × ${pdfHeight}pt`);
+
+    // Mark processing as started in complexity log (if sessionId was pre-generated for tracking)
+    if (preGeneratedSessionId) {
+      const processingStartTime = Date.now();
+      await markComplexityLogProcessingStarted(sessionId, {
+        pageType: options.pageType,
+        bleedType: options.bleedType,
+        edgeType: options.edgeType
+      });
+    }
 
     console.log('Creating and storing raw slices...');
 
@@ -413,6 +427,16 @@ export async function processPDFWithChunking(
     // Clear checkpoints on success
     await clearCheckpoints(sessionId);
 
+    // Log successful processing (if tracking)
+    if (preGeneratedSessionId) {
+      const processingDuration = Date.now() - (Date.now() - 1000); // Approximate, we'd need to store start time
+      await updateComplexityLogStatus(sessionId, 'success', {
+        pageType: options.pageType,
+        bleedType: options.bleedType,
+        edgeType: options.edgeType
+      });
+    }
+
     // Return PDF buffer and slice paths (when using design-based paths)
     if (useDesignPaths) {
       return {
@@ -438,6 +462,17 @@ export async function processPDFWithChunking(
 
     // Provide helpful error messages for common issues
     const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Log failed processing (if tracking)
+    if (preGeneratedSessionId && sessionId) {
+      await updateComplexityLogStatus(sessionId, 'failed', {
+        errorMessage,
+        errorType: categorizeError(errorMessage),
+        pageType: options.pageType,
+        bleedType: options.bleedType,
+        edgeType: options.edgeType
+      });
+    }
 
     // Log detailed error to console for debugging
     console.error('Detailed error:', errorMessage);

@@ -23,6 +23,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { processPDFWithChunking } from '@/lib/process-with-chunking';
 import { analyzePDFComplexity, formatComplexityReport, type PDFComplexityMetrics } from '@/lib/pdf-complexity-analyzer';
+import { logPDFComplexity } from '@/lib/log-pdf-complexity';
 import PDFComplexityWarningModal from '@/components/pdf-complexity-warning-modal';
 import { HelpButton } from "@/components/help-button";
 import { HowToGuide } from "@/components/how-to-guide";
@@ -69,6 +70,7 @@ export default function CreatePage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [pdfComplexity, setPdfComplexity] = useState<PDFComplexityMetrics | null>(null);
   const [showComplexityWarning, setShowComplexityWarning] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
 
   const scaleModeInfoRef = useRef<HTMLDivElement>(null);
@@ -775,13 +777,20 @@ export default function CreatePage() {
       try {
         await loadPdfForPreview(file);
 
+        // Generate session ID for tracking
+        const sessionId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        setCurrentSessionId(sessionId);
+
         // Analyze PDF complexity for logging and warnings
         console.log('📊 Analyzing PDF complexity...');
         const complexity = await analyzePDFComplexity(file);
         setPdfComplexity(complexity);
 
-        // Log detailed complexity report
+        // Log detailed complexity report to console
         console.log(formatComplexityReport(complexity));
+
+        // Log complexity to database for data collection
+        await logPDFComplexity(sessionId, complexity, user?.id);
 
         // Show warning for medium/high complexity PDFs
         if (complexity.riskLevel === 'medium' || complexity.riskLevel === 'high') {
@@ -1100,7 +1109,8 @@ export default function CreatePage() {
         designId,
         user?.id,
         (progress) => setProcessingProgress(progress),
-        (warnings) => setPageWarnings(warnings)
+        (warnings) => setPageWarnings(warnings),
+        currentSessionId || undefined // Pass sessionId for complexity log tracking
       );
 
       setProcessingStep('Complete!');
@@ -2271,13 +2281,10 @@ export default function CreatePage() {
       <SiteFooter />
 
       {/* PDF Complexity Warning Modal */}
-      {pdfComplexity && (
-        <PDFComplexityWarningModal
-          isOpen={showComplexityWarning}
-          onClose={() => setShowComplexityWarning(false)}
-          complexity={pdfComplexity}
-        />
-      )}
+      <PDFComplexityWarningModal
+        isOpen={showComplexityWarning}
+        onClose={() => setShowComplexityWarning(false)}
+      />
     </div>
   );
 }
