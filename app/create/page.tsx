@@ -70,6 +70,7 @@ export default function CreatePage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [pdfComplexity, setPdfComplexity] = useState<PDFComplexityMetrics | null>(null);
   const [showComplexityWarning, setShowComplexityWarning] = useState(false);
+  const [isPdfBlocked, setIsPdfBlocked] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
 
@@ -793,8 +794,16 @@ export default function CreatePage() {
         await logPDFComplexity(sessionId, complexity, user?.id);
 
         // Show warning for medium/high complexity PDFs
-        if (complexity.riskLevel === 'medium' || complexity.riskLevel === 'high') {
+        // Block high-risk PDFs entirely (score 80+)
+        if (complexity.riskLevel === 'high') {
           setShowComplexityWarning(true);
+          setIsPdfBlocked(true);
+        } else if (complexity.riskLevel === 'medium') {
+          setShowComplexityWarning(true);
+          setIsPdfBlocked(false);
+        } else {
+          setShowComplexityWarning(false);
+          setIsPdfBlocked(false);
         }
 
         // Check page count after loading (keep existing warning)
@@ -1024,6 +1033,12 @@ export default function CreatePage() {
   const handleProcessPdf = async () => {
     if (!user) {
       window.location.href = '/auth/signup';
+      return;
+    }
+
+    // Block processing if PDF is high-risk (guaranteed to fail)
+    if (isPdfBlocked) {
+      setShowComplexityWarning(true);
       return;
     }
 
@@ -2284,6 +2299,7 @@ export default function CreatePage() {
       <PDFComplexityWarningModal
         isOpen={showComplexityWarning}
         onClose={() => setShowComplexityWarning(false)}
+        isBlocked={isPdfBlocked}
       />
     </div>
   );

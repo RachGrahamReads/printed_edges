@@ -177,6 +177,13 @@ export async function analyzePDFComplexity(file: File): Promise<PDFComplexityMet
 
 /**
  * Calculate complexity score (0-100) and risk assessment
+ *
+ * Based on real-world failure data:
+ * - FAILED: 2.16MB, 336p, 14 fonts, 2 images, transparency, annotations → Score should be HIGH (block)
+ * - SUCCESS: 10.22MB, 336p, 0 fonts, 334 images (flattened), transparency → Score should be LOW (allow)
+ * - SUCCESS: 4.38MB, 474p, 97 fonts, 89 images, transparency → Score should be MEDIUM (allow)
+ *
+ * Key insight: Non-flattened PDFs with fonts + embedded graphics + transparency = guaranteed failure
  */
 function calculateComplexityScore(metrics: PDFComplexityMetrics): {
   score: number;
@@ -186,70 +193,65 @@ function calculateComplexityScore(metrics: PDFComplexityMetrics): {
   let score = 0;
   const riskFactors: string[] = [];
 
-  // File size factor (0-20 points)
-  if (metrics.fileSizeMB > 50) {
-    score += 20;
-    riskFactors.push(`Large file size (${metrics.fileSizeMB}MB)`);
-  } else if (metrics.fileSizeMB > 25) {
-    score += 10;
-    riskFactors.push(`Moderate file size (${metrics.fileSizeMB}MB)`);
+  // Calculate file size per page to detect flattened vs non-flattened
+  const mbPerPage = metrics.fileSizeMB / metrics.pageCount;
+
+  // CRITICAL INDICATOR: Small file size per page with fonts = non-flattened with compression
+  // Failed PDF: 2.16MB / 336 pages = 0.0064 MB/page with 14 fonts
+  // Working flattened: 10.22MB / 336 pages = 0.0304 MB/page with 0 fonts
+  const isLikelyNonFlattened = mbPerPage < 0.015 && metrics.totalFonts > 0;
+
+  // DEADLY COMBINATION: Non-flattened + Fonts + Images + Transparency (0-60 points)
+  if (isLikelyNonFlattened && metrics.totalFonts > 0 && metrics.totalImages > 0 && metrics.hasTransparency) {
+    score += 60;
+    riskFactors.push(`Non-flattened PDF with fonts (${metrics.totalFonts}), images (${metrics.totalImages}), and transparency - guaranteed to fail`);
   }
 
-  // Page count factor (0-10 points)
-  if (metrics.pageCount > 500) {
-    score += 10;
-    riskFactors.push(`High page count (${metrics.pageCount} pages)`);
-  } else if (metrics.pageCount > 300) {
-    score += 5;
-  }
-
-  // Font factor (0-25 points) - STRONG PREDICTOR
-  if (metrics.totalFonts > 10) {
-    score += 25;
-    riskFactors.push(`Many embedded fonts (${metrics.totalFonts} fonts)`);
-  } else if (metrics.totalFonts > 5) {
-    score += 15;
-    riskFactors.push(`Several embedded fonts (${metrics.totalFonts} fonts)`);
-  } else if (metrics.totalFonts > 2) {
-    score += 8;
-  }
-
-  // Image factor (0-20 points) - STRONG PREDICTOR
-  const avgImagesPerPage = metrics.totalImages / metrics.pageCount;
-  if (avgImagesPerPage > 5) {
-    score += 20;
-    riskFactors.push(`Many embedded images (~${Math.round(avgImagesPerPage)} per page)`);
-  } else if (avgImagesPerPage > 2) {
-    score += 10;
-    riskFactors.push(`Several embedded images (~${Math.round(avgImagesPerPage)} per page)`);
-  }
-
-  // Transparency factor (0-15 points) - STRONG PREDICTOR
-  if (metrics.hasTransparency) {
-    score += 15;
-    riskFactors.push('Contains transparency/layers (likely non-flattened)');
-  }
-
-  // Annotations factor (0-10 points)
+  // Annotations are a red flag but not always fatal (0-20 points)
   if (metrics.hasAnnotations) {
-    score += 10;
+    score += 20;
     riskFactors.push('Contains form fields/annotations (indicates non-flattened)');
   }
 
-  // XObject complexity factor (0-10 points)
-  const avgXObjectsPerPage = metrics.hasXObjects / metrics.pageCount;
-  if (avgXObjectsPerPage > 10) {
+  // Many fonts in a non-flattened PDF (0-15 points)
+  if (metrics.totalFonts > 20 && isLikelyNonFlattened) {
+    score += 15;
+    riskFactors.push(`Very high font count (${metrics.totalFonts} fonts) in non-flattened PDF`);
+  } else if (metrics.totalFonts > 10 && isLikelyNonFlattened) {
+    score += 8;
+    riskFactors.push(`High font count (${metrics.totalFonts} fonts) in non-flattened PDF`);
+  }
+
+  // Embedded images in non-flattened context (0-10 points)
+  // NOTE: Many images with NO fonts = likely flattened (good!)
+  // Few images WITH fonts = likely embedded graphics (bad!)
+  const avgImagesPerPage = metrics.totalImages / metrics.pageCount;
+  if (avgImagesPerPage < 0.5 && avgImagesPerPage > 0 && metrics.totalFonts > 0) {
+    // Few images mixed with text = embedded graphics in non-flattened PDF
     score += 10;
-    riskFactors.push('High XObject count (complex embedded graphics)');
-  } else if (avgXObjectsPerPage > 5) {
+    riskFactors.push('Embedded graphics mixed with text (non-flattened)');
+  }
+
+  // Very large file size can still cause issues (0-10 points)
+  if (metrics.fileSizeMB > 50) {
+    score += 10;
+    riskFactors.push(`Very large file size (${metrics.fileSizeMB}MB)`);
+  }
+
+  // Extreme page count (0-5 points)
+  if (metrics.pageCount > 500) {
     score += 5;
+    riskFactors.push(`Very high page count (${metrics.pageCount} pages)`);
   }
 
   // Determine risk level based on score
+  // HIGH (80+): Block - guaranteed to fail (non-flattened with fonts+images+transparency)
+  // MEDIUM (40-79): Warn - might fail, let user try
+  // LOW (0-39): Allow - likely to succeed
   let riskLevel: 'low' | 'medium' | 'high';
-  if (score >= 60) {
+  if (score >= 80) {
     riskLevel = 'high';
-  } else if (score >= 35) {
+  } else if (score >= 40) {
     riskLevel = 'medium';
   } else {
     riskLevel = 'low';
