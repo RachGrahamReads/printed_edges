@@ -54,7 +54,17 @@
       "Bash(docker volume prune:*)",
       "Bash(supabase:*)",
       "Bash(docker volume rm:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_d64da08deb2a5bf296fe2fb17198d0452bba1b34 npx supabase functions deploy:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_d64da08deb2a5bf296fe2fb17198d0452bba1b34 npx supabase functions logs:*)",
+      "Bash(SUPABASE_SERVICE_ROLE_KEY_PROD=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdzbmRwa2llZGpvamxxcGpkd2d1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Njg2OTg0MSwiZXhwIjoyMDcyNDQ1ODQxfQ.0OpQBE77Wen7BiFbOUWdvymh4Dl4xs5DsCNFkyFhZ6I node:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_d64da08deb2a5bf296fe2fb17198d0452bba1b34 npx supabase functions:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions logs:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase functions deploy:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git log:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_7752c4b96c6f3e10bd0c82970130aed2ee8a2581 npx supabase:*)"
     ],
     "deny": [],
     "ask": []

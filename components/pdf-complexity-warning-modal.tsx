@@ -47,7 +47,7 @@ export default function PDFComplexityWarningModal({
 
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-4">
             <p className="text-sm text-yellow-800">
-              <strong>Note:</strong> Processing complex PDFs uses credits even if they fail.
+              <strong>Note:</strong> Credits are only deducted after successful processing, but complex PDFs often fail and waste time.
             </p>
           </div>
         </div>

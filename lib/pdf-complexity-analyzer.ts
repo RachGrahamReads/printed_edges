@@ -74,8 +74,11 @@ export async function analyzePDFComplexity(file: File): Promise<PDFComplexityMet
       analyzedAt: new Date().toISOString()
     };
 
-    // Sample pages for analysis (first, middle, last + random samples)
-    const pagesToAnalyze = getSamplePages(pdf.numPages);
+    // Analyze ALL pages for accurate complexity detection
+    const pagesToAnalyze: number[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      pagesToAnalyze.push(i);
+    }
 
     let totalWidth = 0;
     let totalHeight = 0;
@@ -173,35 +176,6 @@ export async function analyzePDFComplexity(file: File): Promise<PDFComplexityMet
 }
 
 /**
- * Select representative pages to sample:
- * - First 10 pages (front matter, table of contents, first chapter)
- * - A few pages from the middle of the book
- */
-function getSamplePages(totalPages: number): number[] {
-  const samples: number[] = [];
-
-  // Sample first 10 pages (or all pages if PDF has fewer than 10)
-  const firstPageCount = Math.min(10, totalPages);
-  for (let i = 1; i <= firstPageCount; i++) {
-    samples.push(i);
-  }
-
-  // If PDF has more than 10 pages, also sample from the middle
-  if (totalPages > 10) {
-    const middleStart = Math.floor(totalPages / 2) - 2; // 2 pages before middle
-    const middleEnd = Math.min(middleStart + 4, totalPages); // 5 pages around middle
-
-    for (let i = middleStart; i <= middleEnd; i++) {
-      if (i > 0 && !samples.includes(i)) {
-        samples.push(i);
-      }
-    }
-  }
-
-  return samples.sort((a, b) => a - b);
-}
-
-/**
  * Calculate complexity score (0-100) and risk assessment
  */
 function calculateComplexityScore(metrics: PDFComplexityMetrics): {
@@ -241,7 +215,7 @@ function calculateComplexityScore(metrics: PDFComplexityMetrics): {
   }
 
   // Image factor (0-20 points) - STRONG PREDICTOR
-  const avgImagesPerPage = metrics.totalImages / Math.min(10, metrics.pageCount);
+  const avgImagesPerPage = metrics.totalImages / metrics.pageCount;
   if (avgImagesPerPage > 5) {
     score += 20;
     riskFactors.push(`Many embedded images (~${Math.round(avgImagesPerPage)} per page)`);
@@ -263,7 +237,7 @@ function calculateComplexityScore(metrics: PDFComplexityMetrics): {
   }
 
   // XObject complexity factor (0-10 points)
-  const avgXObjectsPerPage = metrics.hasXObjects / Math.min(10, metrics.pageCount);
+  const avgXObjectsPerPage = metrics.hasXObjects / metrics.pageCount;
   if (avgXObjectsPerPage > 10) {
     score += 10;
     riskFactors.push('High XObject count (complex embedded graphics)');

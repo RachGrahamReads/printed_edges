@@ -76,6 +76,9 @@ export default function MockupPage() {
     setError(null);
 
     try {
+      if (!supabase) {
+        throw new Error('Supabase client not initialized. Please check your environment variables.');
+      }
       // Convert cover file to base64 if provided
       let coverBase64: string | undefined;
       if (coverFile) {
@@ -114,8 +117,8 @@ export default function MockupPage() {
           edgeDesignBase64: edgeDesignBase64,
           trimWidth,
           trimHeight,
-          pageCount,
-          outputPath: `mockup-${Date.now()}.png`
+          pageCount
+          // No outputPath - mockup will be returned as base64 data URL only
         }
       });
 
