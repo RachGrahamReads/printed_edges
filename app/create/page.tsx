@@ -754,17 +754,12 @@ export default function CreatePage() {
   const handlePdfUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && file.type === 'application/pdf') {
-      // Check file size (warn if > 50MB, hard limit at 100MB)
+      // Check file size (hard limit at 50MB)
       const fileSizeMB = file.size / (1024 * 1024);
 
-      if (fileSizeMB > 100) {
-        setPreviewError(`PDF file is too large (${fileSizeMB.toFixed(1)}MB). Maximum supported size is 100MB. Please use a smaller PDF or contact support for assistance with large files.`);
-        return;
-      }
-
       if (fileSizeMB > 50) {
-        console.warn(`⚠️ Large PDF detected (${fileSizeMB.toFixed(1)}MB). Processing may take longer than usual.`);
-        // Don't block, just warn in console
+        setPreviewError(`PDF file is too large (${fileSizeMB.toFixed(1)}MB). Please upload a PDF under 50MB.`);
+        return;
       }
 
       setPdfFile(file);
@@ -793,15 +788,9 @@ export default function CreatePage() {
         // Log complexity to database for data collection
         await logPDFComplexity(sessionId, complexity, user?.id);
 
-        // Show warning for medium/high complexity PDFs
-        // Allow all PDFs to process while collecting data - no hard blocking yet
-        if (complexity.riskLevel === 'high' || complexity.riskLevel === 'medium') {
-          setShowComplexityWarning(true);
-          setIsPdfBlocked(false); // Allow all PDFs while collecting data
-        } else {
-          setShowComplexityWarning(false);
-          setIsPdfBlocked(false);
-        }
+        // No complexity warnings - just log for analysis
+        setShowComplexityWarning(false);
+        setIsPdfBlocked(false);
 
         // Check page count after loading (keep existing warning)
         if (pdfDocument && pdfDocument.numPages > 500) {

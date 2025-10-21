@@ -334,7 +334,8 @@ export async function processPDFWithChunking(
 
       completedChunks += batch.length;
       if (onProgress) {
-        onProgress((completedChunks / chunks.length) * 100);
+        // Chunk processing is 0-80% of total progress
+        onProgress((completedChunks / chunks.length) * 80);
       }
 
       console.log(`✓ Batch ${batchIndex + 1}/${batches.length} completed (${completedChunks}/${chunks.length} pages)`);
@@ -347,6 +348,11 @@ export async function processPDFWithChunking(
     }
 
     console.log('Merging processed chunks...');
+
+    // Update progress: merging starts at 80%
+    if (onProgress) {
+      onProgress(80);
+    }
 
     // Use progressive merge for large PDFs (>50 chunks)
     const outputPath = `${sessionId}/final.pdf`;
@@ -387,6 +393,11 @@ export async function processPDFWithChunking(
 
       const mergeData = await mergeResponse.json();
       finalPdfPath = outputPath;
+    }
+
+    // Update progress: merge complete, downloading at 90%
+    if (onProgress) {
+      onProgress(90);
     }
 
     // Download the final PDF with retry logic
