@@ -173,32 +173,29 @@ export async function analyzePDFComplexity(file: File): Promise<PDFComplexityMet
 }
 
 /**
- * Select representative pages to sample (max 10 pages for performance)
+ * Select representative pages to sample:
+ * - First 10 pages (front matter, table of contents, first chapter)
+ * - A few pages from the middle of the book
  */
 function getSamplePages(totalPages: number): number[] {
   const samples: number[] = [];
 
-  // Always include first page
-  samples.push(1);
-
-  // Include last page if more than 1 page
-  if (totalPages > 1) {
-    samples.push(totalPages);
+  // Sample first 10 pages (or all pages if PDF has fewer than 10)
+  const firstPageCount = Math.min(10, totalPages);
+  for (let i = 1; i <= firstPageCount; i++) {
+    samples.push(i);
   }
 
-  // Include middle page if more than 2 pages
-  if (totalPages > 2) {
-    samples.push(Math.floor(totalPages / 2));
-  }
+  // If PDF has more than 10 pages, also sample from the middle
+  if (totalPages > 10) {
+    const middleStart = Math.floor(totalPages / 2) - 2; // 2 pages before middle
+    const middleEnd = Math.min(middleStart + 4, totalPages); // 5 pages around middle
 
-  // Add random samples up to 10 total pages
-  const remainingSamples = Math.min(7, totalPages - samples.length);
-  for (let i = 0; i < remainingSamples; i++) {
-    let randomPage;
-    do {
-      randomPage = Math.floor(Math.random() * totalPages) + 1;
-    } while (samples.includes(randomPage));
-    samples.push(randomPage);
+    for (let i = middleStart; i <= middleEnd; i++) {
+      if (i > 0 && !samples.includes(i)) {
+        samples.push(i);
+      }
+    }
   }
 
   return samples.sort((a, b) => a - b);
