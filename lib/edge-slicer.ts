@@ -560,7 +560,8 @@ export async function createAndStoreDesignSlices(
   },
   options: EdgeSlicingOptions,
   designId: string,
-  userId: string
+  userId: string,
+  onProgress?: (progress: number) => void
 ): Promise<SliceStoragePaths> {
   if (!supabase) {
     throw new Error('Supabase client not initialized');
@@ -651,6 +652,10 @@ export async function createAndStoreDesignSlices(
   // Upload raw slices with design-based paths
   const storagePaths: SliceStoragePaths = {};
 
+  // Calculate total slices for progress tracking
+  const totalSlices = (rawSlices.side?.length || 0) + (rawSlices.top?.length || 0) + (rawSlices.bottom?.length || 0);
+  let uploadedSlices = 0;
+
   if (rawSlices.side) {
     storagePaths.side = { raw: [], masked: [] };
     console.log(`Storing ${rawSlices.side.length} raw side slices for design ${designId}...`);
@@ -672,6 +677,13 @@ export async function createAndStoreDesignSlices(
             });
 
           if (error) throw new Error(`Upload failed: ${error.message}`);
+
+          // Report progress
+          uploadedSlices++;
+          if (onProgress && totalSlices > 0) {
+            onProgress((uploadedSlices / totalSlices) * 100);
+          }
+
           return { index: i, path };
         } catch (uploadError) {
           retryCount++;
@@ -685,8 +697,8 @@ export async function createAndStoreDesignSlices(
     });
 
     const results = await Promise.all(uploadPromises);
-    results.sort((a, b) => a.index - b.index);
-    storagePaths.side.raw = results.map(r => r.path);
+    results.sort((a, b) => a!.index - b!.index);
+    storagePaths.side.raw = results.map(r => r!.path);
     console.log(`✓ Stored ${results.length} raw side slices`);
   }
 
@@ -711,6 +723,13 @@ export async function createAndStoreDesignSlices(
             });
 
           if (error) throw new Error(`Upload failed: ${error.message}`);
+
+          // Report progress
+          uploadedSlices++;
+          if (onProgress && totalSlices > 0) {
+            onProgress((uploadedSlices / totalSlices) * 100);
+          }
+
           return { index: i, path };
         } catch (uploadError) {
           retryCount++;
@@ -724,8 +743,8 @@ export async function createAndStoreDesignSlices(
     });
 
     const results = await Promise.all(uploadPromises);
-    results.sort((a, b) => a.index - b.index);
-    storagePaths.top.raw = results.map(r => r.path);
+    results.sort((a, b) => a!.index - b!.index);
+    storagePaths.top.raw = results.map(r => r!.path);
     console.log(`✓ Stored ${results.length} raw top slices`);
   }
 
@@ -750,6 +769,13 @@ export async function createAndStoreDesignSlices(
             });
 
           if (error) throw new Error(`Upload failed: ${error.message}`);
+
+          // Report progress
+          uploadedSlices++;
+          if (onProgress && totalSlices > 0) {
+            onProgress((uploadedSlices / totalSlices) * 100);
+          }
+
           return { index: i, path };
         } catch (uploadError) {
           retryCount++;
@@ -763,8 +789,8 @@ export async function createAndStoreDesignSlices(
     });
 
     const results = await Promise.all(uploadPromises);
-    results.sort((a, b) => a.index - b.index);
-    storagePaths.bottom.raw = results.map(r => r.path);
+    results.sort((a, b) => a!.index - b!.index);
+    storagePaths.bottom.raw = results.map(r => r!.path);
     console.log(`✓ Stored ${results.length} raw bottom slices`);
   }
 
@@ -782,7 +808,8 @@ export async function createAndStoreDesignMaskedSlices(
   rawSlicesPaths: SliceStoragePaths,
   options: EdgeSlicingOptions,
   designId: string,
-  userId: string
+  userId: string,
+  onProgress?: (progress: number) => void
 ): Promise<SliceStoragePaths> {
   if (!supabase) {
     throw new Error('Supabase client not initialized');
@@ -792,6 +819,12 @@ export async function createAndStoreDesignMaskedSlices(
 
   // Apply triangle masks to the raw slices
   const maskedSlicesPaths: SliceStoragePaths = JSON.parse(JSON.stringify(rawSlicesPaths)); // Deep copy
+
+  // Calculate total slices for progress tracking
+  const totalSlices = (rawSlicesPaths.side?.raw.length || 0) +
+                      (rawSlicesPaths.top?.raw.length || 0) +
+                      (rawSlicesPaths.bottom?.raw.length || 0);
+  let processedSlices = 0;
 
   // Process side slices if they exist
   if (rawSlicesPaths.side?.raw) {
@@ -830,6 +863,13 @@ export async function createAndStoreDesignMaskedSlices(
             console.error(`Upload error for side slice ${i}:`, JSON.stringify(uploadError, null, 2));
             throw new Error(`Upload failed: ${JSON.stringify(uploadError)}`);
           }
+
+          // Report progress
+          processedSlices++;
+          if (onProgress && totalSlices > 0) {
+            onProgress((processedSlices / totalSlices) * 100);
+          }
+
           return { index: i, path: maskedPath };
         } catch (error) {
           retryCount++;
@@ -846,8 +886,8 @@ export async function createAndStoreDesignMaskedSlices(
     });
 
     const results = await Promise.all(maskPromises);
-    results.sort((a, b) => a.index - b.index);
-    maskedSlicesPaths.side!.masked = results.map(r => r.path);
+    results.sort((a, b) => a!.index - b!.index);
+    maskedSlicesPaths.side!.masked = results.map(r => r!.path);
     console.log(`✓ Stored ${results.length} masked side slices`);
   }
 
@@ -884,6 +924,13 @@ export async function createAndStoreDesignMaskedSlices(
             });
 
           if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+          // Report progress
+          processedSlices++;
+          if (onProgress && totalSlices > 0) {
+            onProgress((processedSlices / totalSlices) * 100);
+          }
+
           return { index: i, path: maskedPath };
         } catch (error) {
           retryCount++;
@@ -897,8 +944,8 @@ export async function createAndStoreDesignMaskedSlices(
     });
 
     const results = await Promise.all(maskPromises);
-    results.sort((a, b) => a.index - b.index);
-    maskedSlicesPaths.top!.masked = results.map(r => r.path);
+    results.sort((a, b) => a!.index - b!.index);
+    maskedSlicesPaths.top!.masked = results.map(r => r!.path);
     console.log(`✓ Stored ${results.length} masked top slices`);
   }
 
@@ -935,6 +982,13 @@ export async function createAndStoreDesignMaskedSlices(
             });
 
           if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+          // Report progress
+          processedSlices++;
+          if (onProgress && totalSlices > 0) {
+            onProgress((processedSlices / totalSlices) * 100);
+          }
+
           return { index: i, path: maskedPath };
         } catch (error) {
           retryCount++;
@@ -948,8 +1002,8 @@ export async function createAndStoreDesignMaskedSlices(
     });
 
     const results = await Promise.all(maskPromises);
-    results.sort((a, b) => a.index - b.index);
-    maskedSlicesPaths.bottom!.masked = results.map(r => r.path);
+    results.sort((a, b) => a!.index - b!.index);
+    maskedSlicesPaths.bottom!.masked = results.map(r => r!.path);
     console.log(`✓ Stored ${results.length} masked bottom slices`);
   }
 
@@ -969,7 +1023,8 @@ export async function createAndStoreRawSlices(
     bottom?: { base64: string } | { color: string };
   },
   options: EdgeSlicingOptions,
-  sessionId: string
+  sessionId: string,
+  onProgress?: (progress: number) => void
 ): Promise<SliceStoragePaths> {
   if (!supabase) {
     throw new Error('Supabase client not initialized');
@@ -1058,6 +1113,10 @@ export async function createAndStoreRawSlices(
   // Upload raw slices to storage and track paths
   const storagePaths: SliceStoragePaths = {};
 
+  // Calculate total slices for progress tracking
+  const totalSlices = (rawSlices.side?.length || 0) + (rawSlices.top?.length || 0) + (rawSlices.bottom?.length || 0);
+  let uploadedSlices = 0;
+
   if (rawSlices.side) {
     storagePaths.side = { raw: [], masked: [] };
     console.log(`Uploading ${rawSlices.side.length} raw side slices in batches...`);
@@ -1079,6 +1138,13 @@ export async function createAndStoreRawSlices(
             });
 
           if (error) throw new Error(`Upload failed: ${error.message}`);
+
+          // Report progress
+          uploadedSlices++;
+          if (onProgress && totalSlices > 0) {
+            onProgress((uploadedSlices / totalSlices) * 100);
+          }
+
           return { index: i, path };
         } catch (uploadError) {
           retryCount++;
@@ -1093,8 +1159,8 @@ export async function createAndStoreRawSlices(
     const results = await Promise.all(uploadPromises);
 
     // Sort results by index to maintain order
-    results.sort((a, b) => a.index - b.index);
-    storagePaths.side.raw = results.map(r => r.path);
+    results.sort((a, b) => a!.index - b!.index);
+    storagePaths.side.raw = results.map(r => r!.path);
     console.log(`✓ Uploaded ${results.length} raw side slices`);
   }
 
@@ -1119,6 +1185,13 @@ export async function createAndStoreRawSlices(
             });
 
           if (error) throw new Error(`Upload failed: ${error.message}`);
+
+          // Report progress
+          uploadedSlices++;
+          if (onProgress && totalSlices > 0) {
+            onProgress((uploadedSlices / totalSlices) * 100);
+          }
+
           return { index: i, path };
         } catch (uploadError) {
           retryCount++;
@@ -1131,8 +1204,8 @@ export async function createAndStoreRawSlices(
     });
 
     const results = await Promise.all(uploadPromises);
-    results.sort((a, b) => a.index - b.index);
-    storagePaths.top.raw = results.map(r => r.path);
+    results.sort((a, b) => a!.index - b!.index);
+    storagePaths.top.raw = results.map(r => r!.path);
     console.log(`✓ Uploaded ${results.length} raw top slices`);
   }
 
@@ -1157,6 +1230,13 @@ export async function createAndStoreRawSlices(
             });
 
           if (error) throw new Error(`Upload failed: ${error.message}`);
+
+          // Report progress
+          uploadedSlices++;
+          if (onProgress && totalSlices > 0) {
+            onProgress((uploadedSlices / totalSlices) * 100);
+          }
+
           return { index: i, path };
         } catch (uploadError) {
           retryCount++;
@@ -1182,7 +1262,8 @@ export async function createAndStoreRawSlices(
 export async function createAndStoreMaskedSlices(
   rawSlicesPaths: SliceStoragePaths,
   options: EdgeSlicingOptions,
-  sessionId: string
+  sessionId: string,
+  onProgress?: (progress: number) => void
 ): Promise<SliceStoragePaths> {
   if (!supabase) {
     throw new Error('Supabase client not initialized');
@@ -1193,6 +1274,12 @@ export async function createAndStoreMaskedSlices(
     top: rawSlicesPaths.top ? { raw: [...rawSlicesPaths.top.raw], masked: [] } : undefined,
     bottom: rawSlicesPaths.bottom ? { raw: [...rawSlicesPaths.bottom.raw], masked: [] } : undefined
   };
+
+  // Calculate total slices for progress tracking
+  const totalAllSlices = (rawSlicesPaths.side?.raw.length || 0) +
+                          (rawSlicesPaths.top?.raw.length || 0) +
+                          (rawSlicesPaths.bottom?.raw.length || 0);
+  let processedSlices = 0;
 
   // Process side edges with triangle masks (batched for better performance)
   if (rawSlicesPaths.side) {
@@ -1216,6 +1303,12 @@ export async function createAndStoreMaskedSlices(
       // Add results in order
       for (const result of batchResults) {
         maskedPaths.side!.masked.push(result);
+        processedSlices++;
+      }
+
+      // Report progress
+      if (onProgress && totalAllSlices > 0) {
+        onProgress((processedSlices / totalAllSlices) * 100);
       }
 
       // Brief pause between batches to prevent overwhelming the system
@@ -1246,6 +1339,12 @@ export async function createAndStoreMaskedSlices(
 
       for (const result of batchResults) {
         maskedPaths.top!.masked.push(result);
+        processedSlices++;
+      }
+
+      // Report progress
+      if (onProgress && totalAllSlices > 0) {
+        onProgress((processedSlices / totalAllSlices) * 100);
       }
 
       if (batchEnd < totalSlices) {
@@ -1275,6 +1374,12 @@ export async function createAndStoreMaskedSlices(
 
       for (const result of batchResults) {
         maskedPaths.bottom!.masked.push(result);
+        processedSlices++;
+      }
+
+      // Report progress
+      if (onProgress && totalAllSlices > 0) {
+        onProgress((processedSlices / totalAllSlices) * 100);
       }
 
       if (batchEnd < totalSlices) {

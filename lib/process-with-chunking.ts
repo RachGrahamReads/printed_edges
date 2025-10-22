@@ -111,7 +111,7 @@ export async function processPDFWithChunking(
 
     console.log('Creating and storing raw slices...');
 
-    // STAGE 1: Create raw slices and store them
+    // STAGE 1: Create raw slices and store them (0-10% of total progress)
     let rawSlicesPaths;
     if (useDesignPaths) {
       rawSlicesPaths = await createAndStoreDesignSlices(edgeImages, {
@@ -122,7 +122,12 @@ export async function processPDFWithChunking(
         trimHeight: options.trimHeight,
         scaleMode: options.scaleMode,
         pdfDimensions: { width: pdfWidth, height: pdfHeight }
-      }, designId!, userId!);
+      }, designId!, userId!, (sliceProgress) => {
+        // Map slice creation progress to 0-10% of total
+        if (onProgress) {
+          onProgress((sliceProgress / 100) * 10);
+        }
+      });
     } else {
       rawSlicesPaths = await createAndStoreRawSlices(edgeImages, {
         numPages: options.numPages,
@@ -132,14 +137,19 @@ export async function processPDFWithChunking(
         trimHeight: options.trimHeight,
         scaleMode: options.scaleMode,
         pdfDimensions: { width: pdfWidth, height: pdfHeight }
-      }, sessionId);
+      }, sessionId, (sliceProgress) => {
+        // Map slice creation progress to 0-10% of total
+        if (onProgress) {
+          onProgress((sliceProgress / 100) * 10);
+        }
+      });
     }
 
     console.log(`Created raw slices - Side: ${rawSlicesPaths.side?.raw.length || 0}, Top: ${rawSlicesPaths.top?.raw.length || 0}, Bottom: ${rawSlicesPaths.bottom?.raw.length || 0}`);
 
     console.log('Creating and storing masked slices...');
 
-    // STAGE 2: Apply triangle masks and store masked versions
+    // STAGE 2: Apply triangle masks and store masked versions (10-20% of total progress)
     let maskedSlicesPaths;
     if (useDesignPaths) {
       maskedSlicesPaths = await createAndStoreDesignMaskedSlices(rawSlicesPaths, {
@@ -150,7 +160,12 @@ export async function processPDFWithChunking(
         trimHeight: options.trimHeight,
         scaleMode: options.scaleMode,
         pdfDimensions: { width: pdfWidth, height: pdfHeight }
-      }, designId!, userId!);
+      }, designId!, userId!, (maskProgress) => {
+        // Map mask creation progress to 10-20% of total
+        if (onProgress) {
+          onProgress(10 + (maskProgress / 100) * 10);
+        }
+      });
     } else {
       maskedSlicesPaths = await createAndStoreMaskedSlices(rawSlicesPaths, {
         numPages: options.numPages,
@@ -160,7 +175,12 @@ export async function processPDFWithChunking(
         trimHeight: options.trimHeight,
         scaleMode: options.scaleMode,
         pdfDimensions: { width: pdfWidth, height: pdfHeight }
-      }, sessionId);
+      }, sessionId, (maskProgress) => {
+        // Map mask creation progress to 10-20% of total
+        if (onProgress) {
+          onProgress(10 + (maskProgress / 100) * 10);
+        }
+      });
     }
 
     console.log(`Created masked slices - Side: ${maskedSlicesPaths.side?.masked.length || 0}, Top: ${maskedSlicesPaths.top?.masked.length || 0}, Bottom: ${maskedSlicesPaths.bottom?.masked.length || 0}`);
@@ -334,8 +354,8 @@ export async function processPDFWithChunking(
 
       completedChunks += batch.length;
       if (onProgress) {
-        // Chunk processing is 0-80% of total progress
-        onProgress((completedChunks / chunks.length) * 80);
+        // Chunk processing is 20-80% of total progress
+        onProgress(20 + (completedChunks / chunks.length) * 60);
       }
 
       console.log(`✓ Batch ${batchIndex + 1}/${batches.length} completed (${completedChunks}/${chunks.length} pages)`);
@@ -354,13 +374,20 @@ export async function processPDFWithChunking(
       onProgress(80);
     }
 
+    console.log(`Starting recursive merge of ${processedPaths.length} chunks into final PDF...`);
+
     // Use progressive merge for large PDFs (>50 chunks)
     const outputPath = `${sessionId}/final.pdf`;
     let finalPdfPath: string;
 
     if (chunks.length > 50) {
       console.log(`Large PDF detected (${chunks.length} chunks). Using progressive merge strategy.`);
-      finalPdfPath = await progressiveMerge(sessionId, processedChunkPaths, outputPath);
+      finalPdfPath = await progressiveMerge(sessionId, processedChunkPaths, outputPath, (mergeProgress) => {
+        // Map merge progress to 80-95% of total (15% range)
+        if (onProgress) {
+          onProgress(80 + (mergeProgress / 100) * 15);
+        }
+      });
     } else {
       console.log(`Small PDF (${chunks.length} chunks). Using single-stage merge.`);
 
@@ -395,9 +422,9 @@ export async function processPDFWithChunking(
       finalPdfPath = outputPath;
     }
 
-    // Update progress: merge complete, downloading at 90%
+    // Update progress: merge complete, downloading at 95%
     if (onProgress) {
-      onProgress(90);
+      onProgress(95);
     }
 
     // Download the final PDF with retry logic
@@ -429,6 +456,11 @@ export async function processPDFWithChunking(
     }
 
     const pdfBuffer = await finalPdf.arrayBuffer();
+
+    // Update progress: download complete at 100%
+    if (onProgress) {
+      onProgress(100);
+    }
 
     // Clean up: Delete all temporary files from storage after successful download
     // This prevents storage from filling up since we don't store PDFs long-term
@@ -639,7 +671,7 @@ async function cleanupSession(sessionId: string, finalPdfPath: string, isDesignB
 }
 
 // Progressive merge function for large PDFs with checkpointing
-async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOutputPath: string): Promise<string> {
+async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOutputPath: string, onProgress?: (progress: number) => void): Promise<string> {
   if (!supabase) {
     console.error('Supabase client not initialized in progressiveMerge');
     throw new Error('System error. Please try again or contact us for support.');
@@ -686,6 +718,11 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
     const result = await mergeGroup(group, intermediatePath, sessionId, groupIndex + 1, intermediateGroups.length);
     intermediatePaths.push(result);
+
+    // Report progress (Stage 1 is 0-70% of merge progress)
+    if (onProgress) {
+      onProgress(((groupIndex + 1) / intermediateGroups.length) * 70);
+    }
 
     // Log progress every 10 merges
     if ((groupIndex + 1) % 10 === 0 || groupIndex === intermediateGroups.length - 1) {
@@ -734,6 +771,11 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
       const result = await mergeGroup(group, stage2Path, sessionId, groupIndex + 1, stage2Groups.length);
       stage2Paths.push(result);
+
+      // Report progress (Stage 2 is 70-85% of merge progress)
+      if (onProgress) {
+        onProgress(70 + ((groupIndex + 1) / stage2Groups.length) * 15);
+      }
     }
 
     // Save checkpoint after Stage 2
@@ -776,6 +818,11 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
 
         const result = await mergeGroup(group, stage3Path, sessionId, groupIndex + 1, stage3Groups.length);
         stage3Paths.push(result);
+
+        // Report progress (Stage 3 is 85-95% of merge progress)
+        if (onProgress) {
+          onProgress(85 + ((groupIndex + 1) / stage3Groups.length) * 10);
+        }
       }
 
       // Clean up Stage 2 files
