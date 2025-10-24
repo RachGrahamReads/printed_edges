@@ -653,13 +653,13 @@ serve(async (req) => {
 
       let targetWidth, targetHeight;
 
-      if (scaleMode === 'none') {
-        // Use recommended pixel dimensions for 'none' mode (same as edge preview canvas)
-        // This ensures 1:1 pixel mapping matches the edge preview
+      if (scaleMode === 'none' || scaleMode === 'extend-sides') {
+        // Use recommended pixel dimensions for 'none' and 'extend-sides' modes (same as edge preview canvas)
+        // This ensures proper scaling/fitting logic matches the edge preview
         targetWidth = numLeaves; // Width in pixels = number of leaves
         targetHeight = trimHeight * 285.7; // Height at 285.7 DPI
       } else {
-        // Use physical dimensions for aspect ratio calculations (fill, fit, stretch, extend-sides)
+        // Use physical dimensions for aspect ratio calculations (fill, fit, stretch)
         const physicalEdgeWidth = numLeaves * PAPER_THICKNESS_INCHES; // e.g., 0.35"
         const physicalEdgeHeight = trimHeight; // e.g., 9"
         targetWidth = physicalEdgeWidth * 1000; // Scale up for precision
