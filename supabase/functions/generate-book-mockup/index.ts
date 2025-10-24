@@ -588,7 +588,7 @@ serve(async (req) => {
      minX = 431;
      maxX = 982;
      minY = 135;
-     maxY = 1214;
+     maxY = 1212;
      console.log('Using manual override:', { minX, maxX, minY, maxY });
 
     // For a 3D book mockup with perspective distortion
