@@ -143,9 +143,28 @@ function applyScaleMode(
       }
     }
 
-    case 'none':
+    case 'none': {
       // Use image at original scale (1:1 pixel mapping)
-      return [u, v];
+      // Center the image and show gaps if smaller than target
+      const targetPixelWidth = targetWidth;
+      const targetPixelHeight = targetHeight;
+
+      // Calculate what portion of the target the original image covers
+      const imageWidthRatio = imageWidth / targetPixelWidth;
+      const imageHeightRatio = imageHeight / targetPixelHeight;
+
+      // Map UV to centered position
+      // If image is smaller, UV outside [0,1] range will return null (showing gaps)
+      const centeredU = (u - 0.5) / imageWidthRatio + 0.5;
+      const centeredV = (v - 0.5) / imageHeightRatio + 0.5;
+
+      // Only sample if within original image bounds
+      if (centeredU < 0 || centeredU > 1 || centeredV < 0 || centeredV > 1) {
+        return null; // Outside image bounds - show gap
+      }
+
+      return [centeredU, centeredV];
+    }
 
     case 'extend-sides': {
       // Extend leftmost and rightmost columns
@@ -710,9 +729,17 @@ serve(async (req) => {
       const pageEdgeMinY = Math.min(pageEdgeQuad.tl[1], pageEdgeQuad.tr[1], pageEdgeQuad.bl[1], pageEdgeQuad.br[1]);
       const pageEdgeMaxY = Math.max(pageEdgeQuad.tl[1], pageEdgeQuad.tr[1], pageEdgeQuad.bl[1], pageEdgeQuad.br[1]);
 
-      // Calculate target dimensions for scaling
-      const targetWidth = pageEdgeMaxX - pageEdgeMinX;
-      const targetHeight = pageEdgeMaxY - pageEdgeMinY;
+      // Calculate target dimensions for scaling based on PHYSICAL dimensions
+      // NOT pixel dimensions of the distorted 3D quad, which would give wrong aspect ratio
+      const PAPER_THICKNESS_INCHES = 0.0035;
+      const numLeaves = Math.ceil(pageCount / 2);
+      const physicalEdgeWidth = numLeaves * PAPER_THICKNESS_INCHES; // e.g., 0.35"
+      const physicalEdgeHeight = trimHeight; // e.g., 9"
+
+      // Use physical dimensions for aspect ratio calculations in applyScaleMode
+      // The actual pixel values don't matter, only their ratio matters for scaling decisions
+      const targetWidth = physicalEdgeWidth * 1000; // Scale up for precision
+      const targetHeight = physicalEdgeHeight * 1000;
 
       for (let y = Math.floor(pageEdgeMinY); y <= Math.ceil(pageEdgeMaxY); y++) {
         for (let x = Math.floor(pageEdgeMinX); x <= Math.ceil(pageEdgeMaxX); x++) {
