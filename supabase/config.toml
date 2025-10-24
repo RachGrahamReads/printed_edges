@@ -205,6 +205,9 @@ verify_jwt = false
 [functions.process-pdf-urls]
 verify_jwt = false
 
+[functions.generate-book-mockup]
+verify_jwt = false
+
 
 # =======
 # Storage
