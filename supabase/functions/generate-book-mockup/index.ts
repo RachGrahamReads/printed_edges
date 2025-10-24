@@ -602,7 +602,7 @@ serve(async (req) => {
 
     let topLeft = [minX, minY + Math.floor(redAreaWidth * 0.085)] as [number, number];
     let topRight = [maxX, minY] as [number, number];
-    let bottomLeft = [minX, maxY - Math.floor(redAreaWidth * 0.085) + 2] as [number, number];
+    let bottomLeft = [minX, maxY - Math.floor(redAreaWidth * 0.085) + 20] as [number, number];
     let bottomRight = [maxX, maxY + 2] as [number, number];
 
     const quad = {
