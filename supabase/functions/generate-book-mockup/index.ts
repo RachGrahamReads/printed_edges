@@ -592,12 +592,17 @@ serve(async (req) => {
      console.log('Using manual override:', { minX, maxX, minY, maxY });
 
     // For a 3D book mockup with perspective distortion
-    // Cover quad should fully cover the red area to avoid white gaps
-    // Create quad that fully covers the red placeholder area
-    // Bottom extended by 2px to eliminate white line at bottom edge
-    let topLeft = [minX, minY] as [number, number];
+    // Return to the original detected quad that was working
+    const redAreaWidth = maxX - minX;
+    const redAreaHeight = maxY - minY;
+
+    // Apply the original perspective transformation that gave us:
+    // tl: [431, 89], tr: [916, 147], bl: [431, 1249], br: [982, 1215]
+    const perspectiveOffset = Math.floor(redAreaWidth * 0.12);
+
+    let topLeft = [minX, minY + Math.floor(redAreaWidth * 0.085)] as [number, number];
     let topRight = [maxX, minY] as [number, number];
-    let bottomLeft = [minX, maxY + 2] as [number, number];
+    let bottomLeft = [minX, maxY - Math.floor(redAreaWidth * 0.085) + 2] as [number, number];
     let bottomRight = [maxX, maxY + 2] as [number, number];
 
     const quad = {
