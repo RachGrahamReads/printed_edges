@@ -588,7 +588,7 @@ serve(async (req) => {
      minX = 431;
      maxX = 982;
      minY = 135;
-     maxY = 1214;
+     maxY = 1212;
      console.log('Using manual override:', { minX, maxX, minY, maxY });
 
     // For a 3D book mockup with perspective distortion
@@ -602,8 +602,8 @@ serve(async (req) => {
 
     let topLeft = [minX, minY + Math.floor(redAreaWidth * 0.085)] as [number, number];
     let topRight = [maxX, minY] as [number, number];
-    let bottomLeft = [minX, maxY - Math.floor(redAreaWidth * 0.085) + 2] as [number, number];
-    let bottomRight = [maxX, maxY + 2] as [number, number];
+    let bottomLeft = [minX, maxY - Math.floor(redAreaWidth * 0.085)] as [number, number];
+    let bottomRight = [maxX, maxY] as [number, number];
 
     const quad = {
       tl: topLeft,
@@ -619,103 +619,19 @@ serve(async (req) => {
     outputImg.bitmap.set(templateImg.bitmap);
     const outputPixels = outputImg.bitmap;
 
-    // Apply perspective warp: map cover image to quad (if cover provided)
-    if (coverImg) {
-      const coverPixels = coverImg.bitmap;
-      const coverWidth = coverImg.width;
-      const coverHeight = coverImg.height;
-
-      console.log('Applying perspective warp...');
-
-      // Calculate the aspect ratio of the quad and cover
-      const quadWidth = Math.max(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]) - Math.min(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
-      const quadHeight = Math.max(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]) - Math.min(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
-      const quadAspect = quadWidth / quadHeight;
-      const coverAspect = coverWidth / coverHeight;
-
-      // Calculate how to fit the cover image into the quad
-      // Strategy: Fit by WIDTH to avoid horizontal stretching, crop top/bottom
-
-      let cropX = 0;  // Amount to crop from left/right (in source image normalized coords)
-      let cropY = 0;  // Amount to crop from top/bottom (in source image normalized coords)
-
-      // Fit by width means we scale the image so its width fills the quad width
-      // If the image height is then taller than the quad, we crop top/bottom
-      // If the image height is shorter, we'll have letterboxing (which is fine)
-
-      // The quad expects a certain aspect ratio (quadAspect = width/height)
-      // The cover has coverAspect = width/height
-      // If coverAspect < quadAspect, cover is relatively taller -> crop height
-      // If coverAspect > quadAspect, cover is relatively wider -> would crop width (but we don't want that)
-
-      if (coverAspect < quadAspect) {
-        // Cover is taller relative to quad - crop top/bottom
-        // We want to show the full width, so calculate what portion of height to show
-        const heightRatio = quadAspect / coverAspect;  // < 1
-        cropY = (1 - heightRatio) / 2;  // Crop this much from top and bottom
-      }
-      // If coverAspect >= quadAspect, cover is wider - just fit it (may letterbox)
-
-      console.log('Crop transform:', { coverAspect, quadAspect, cropY });
-
-      // For each pixel in the quad region, map to source cover
-      const quadMinX = Math.min(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
-      const quadMaxX = Math.max(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
-      const quadMinY = Math.min(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
-      const quadMaxY = Math.max(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
-
-      for (let y = quadMinY; y <= quadMaxY; y++) {
-        for (let x = quadMinX; x <= quadMaxX; x++) {
-          if (!isPointInQuad(x, y, quad)) continue;
-
-          const uv = quadToUV(x, y, quad);
-          if (!uv) continue;
-
-          // Map UV [0,1] to the cropped region of the source image
-          let [u, v] = uv;
-
-          // Apply cropping - map to the visible portion of the source
-          u = cropX + u * (1 - 2 * cropX);
-          v = cropY + v * (1 - 2 * cropY);
-
-          // Clamp to valid range
-          u = Math.max(0, Math.min(1, u));
-          v = Math.max(0, Math.min(1, v));
-
-          const srcX = u * (coverWidth - 1);
-          const srcY = v * (coverHeight - 1);
-
-          const color = bilinearSample(coverPixels, coverWidth, coverHeight, srcX, srcY);
-
-          const destIdx = (y * templateWidth + x) * 4;
-          outputPixels[destIdx] = color[0];
-          outputPixels[destIdx + 1] = color[1];
-          outputPixels[destIdx + 2] = color[2];
-          outputPixels[destIdx + 3] = color[3];
-        }
-      }
-
-      console.log('Cover perspective warp complete');
-    } else {
-      console.log('No cover image provided, using template as-is');
-    }
-
-    // Calculate page edge quad
+    // Calculate page edge quad FIRST (needed for proper layering)
     console.log('Calculating page edge quad...');
     const pageEdgeQuad = calculatePageEdgeQuad(quad, trimWidth, trimHeight, pageCount);
     console.log('Page edge quad:', pageEdgeQuad);
     console.log('Calculated edge width:', calculatePageEdgeWidth(pageCount), 'inches');
 
-    // Shadow rendering disabled to match template design
-    // console.log('Rendering book shadow...');
-    // renderBookShadow(outputPixels, quad, pageEdgeQuad, templateWidth, templateHeight);
-    // console.log('Shadow rendering complete');
-
-    // Render page edge - always render clean paper base first, then edge design if provided
+    // Render page edge FIRST (before cover) so transparency shows paper, not dark cover
+    // Render clean paper base first
     console.log('Rendering clean paper base for page edge...');
     renderDefaultPageEdge(outputPixels, pageEdgeQuad, templateWidth, templateHeight);
     console.log('Paper base rendering complete');
 
+    // Then render edge design on top of paper (if provided)
     if (edgeDesignImg) {
       console.log('Rendering custom edge design on top of paper base...');
 
@@ -797,6 +713,87 @@ serve(async (req) => {
       console.log('Custom edge design rendering complete');
     } else {
       console.log('No edge design provided, using paper base only');
+    }
+
+    // NOW render cover image on top (if cover provided)
+    if (coverImg) {
+      const coverPixels = coverImg.bitmap;
+      const coverWidth = coverImg.width;
+      const coverHeight = coverImg.height;
+
+      console.log('Applying perspective warp...');
+
+      // Calculate the aspect ratio of the quad and cover
+      const quadWidth = Math.max(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]) - Math.min(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
+      const quadHeight = Math.max(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]) - Math.min(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
+      const quadAspect = quadWidth / quadHeight;
+      const coverAspect = coverWidth / coverHeight;
+
+      // Calculate how to fit the cover image into the quad
+      // Strategy: Fit by WIDTH to avoid horizontal stretching, crop top/bottom
+
+      let cropX = 0;  // Amount to crop from left/right (in source image normalized coords)
+      let cropY = 0;  // Amount to crop from top/bottom (in source image normalized coords)
+
+      // Fit by width means we scale the image so its width fills the quad width
+      // If the image height is then taller than the quad, we crop top/bottom
+      // If the image height is shorter, we'll have letterboxing (which is fine)
+
+      // The quad expects a certain aspect ratio (quadAspect = width/height)
+      // The cover has coverAspect = width/height
+      // If coverAspect < quadAspect, cover is relatively taller -> crop height
+      // If coverAspect > quadAspect, cover is relatively wider -> would crop width (but we don't want that)
+
+      if (coverAspect < quadAspect) {
+        // Cover is taller relative to quad - crop top/bottom
+        // We want to show the full width, so calculate what portion of height to show
+        const heightRatio = quadAspect / coverAspect;  // < 1
+        cropY = (1 - heightRatio) / 2;  // Crop this much from top and bottom
+      }
+      // If coverAspect >= quadAspect, cover is wider - just fit it (may letterbox)
+
+      console.log('Crop transform:', { coverAspect, quadAspect, cropY });
+
+      // For each pixel in the quad region, map to source cover
+      const quadMinX = Math.min(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
+      const quadMaxX = Math.max(quad.tl[0], quad.tr[0], quad.bl[0], quad.br[0]);
+      const quadMinY = Math.min(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
+      const quadMaxY = Math.max(quad.tl[1], quad.tr[1], quad.bl[1], quad.br[1]);
+
+      for (let y = quadMinY; y <= quadMaxY; y++) {
+        for (let x = quadMinX; x <= quadMaxX; x++) {
+          if (!isPointInQuad(x, y, quad)) continue;
+
+          const uv = quadToUV(x, y, quad);
+          if (!uv) continue;
+
+          // Map UV [0,1] to the cropped region of the source image
+          let [u, v] = uv;
+
+          // Apply cropping - map to the visible portion of the source
+          u = cropX + u * (1 - 2 * cropX);
+          v = cropY + v * (1 - 2 * cropY);
+
+          // Clamp to valid range
+          u = Math.max(0, Math.min(1, u));
+          v = Math.max(0, Math.min(1, v));
+
+          const srcX = u * (coverWidth - 1);
+          const srcY = v * (coverHeight - 1);
+
+          const color = bilinearSample(coverPixels, coverWidth, coverHeight, srcX, srcY);
+
+          const destIdx = (y * templateWidth + x) * 4;
+          outputPixels[destIdx] = color[0];
+          outputPixels[destIdx + 1] = color[1];
+          outputPixels[destIdx + 2] = color[2];
+          outputPixels[destIdx + 3] = color[3];
+        }
+      }
+
+      console.log('Cover perspective warp complete');
+    } else {
+      console.log('No cover image provided, using template as-is');
     }
 
     console.log('Encoding PNG...');
