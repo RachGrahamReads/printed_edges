@@ -98,7 +98,7 @@ export default function CreatePage() {
   const bottomEdgeCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const supabase = createClient();
-  const numLeaves = Math.ceil(totalPages / 2);
+  const numLeaves = Math.ceil((useManualSettings ? manualPageCount : totalPages) / 2);
 
   // Check auth status and fetch credits on mount
   useEffect(() => {

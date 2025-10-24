@@ -687,10 +687,10 @@ serve(async (req) => {
     console.log('Page edge quad:', pageEdgeQuad);
     console.log('Calculated edge width:', calculatePageEdgeWidth(pageCount), 'inches');
 
-    // Render shadow FIRST (underneath everything)
-    console.log('Rendering book shadow...');
-    renderBookShadow(outputPixels, quad, pageEdgeQuad, templateWidth, templateHeight);
-    console.log('Shadow rendering complete');
+    // Shadow rendering disabled to match template design
+    // console.log('Rendering book shadow...');
+    // renderBookShadow(outputPixels, quad, pageEdgeQuad, templateWidth, templateHeight);
+    // console.log('Shadow rendering complete');
 
     // Render page edge - always render clean paper base first, then edge design if provided
     console.log('Rendering clean paper base for page edge...');
