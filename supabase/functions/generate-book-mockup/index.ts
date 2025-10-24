@@ -167,17 +167,45 @@ function applyScaleMode(
     }
 
     case 'extend-sides': {
-      // Extend leftmost and rightmost columns
-      const EDGE_THRESHOLD = 0.05; // 5% from each edge
-      if (u < EDGE_THRESHOLD) {
-        return [0, v]; // Sample from leftmost column
-      } else if (u > 1 - EDGE_THRESHOLD) {
-        return [1, v]; // Sample from rightmost column
-      } else {
-        // Scale the middle portion to fill the center
-        const scaledU = (u - EDGE_THRESHOLD) / (1 - 2 * EDGE_THRESHOLD);
-        return [scaledU, v];
+      // Extend-sides: First FIT the image, then extend edges to fill gaps
+      // This matches the edge preview logic
+
+      // Calculate fit/contain scale (same as 'fit' mode)
+      const fitScale = Math.min(targetWidth / imageWidth, targetHeight / imageHeight);
+      const fittedWidth = imageWidth * fitScale;
+      const fittedHeight = imageHeight * fitScale;
+
+      // Calculate gaps (if image doesn't fill target dimensions)
+      const gapWidth = Math.max(0, targetWidth - fittedWidth);
+      const gapHeight = Math.max(0, targetHeight - fittedHeight);
+
+      // Calculate gap sizes on each side (centered)
+      const gapLeft = gapWidth / 2;
+      const gapTop = gapHeight / 2;
+
+      // Map UV to actual position in target space
+      const targetX = u * targetWidth;
+      const targetY = v * targetHeight;
+
+      // Check if we're in a gap area (horizontal)
+      if (targetX < gapLeft) {
+        // Left gap - extend leftmost pixel
+        return [0, (targetY - gapTop) / fittedHeight];
+      } else if (targetX >= gapLeft + fittedWidth) {
+        // Right gap - extend rightmost pixel
+        return [1, (targetY - gapTop) / fittedHeight];
       }
+
+      // Check if we're in a gap area (vertical)
+      if (targetY < gapTop || targetY >= gapTop + fittedHeight) {
+        return null; // Outside fitted area vertically
+      }
+
+      // We're in the fitted image area
+      const imageX = (targetX - gapLeft) / fittedWidth;
+      const imageY = (targetY - gapTop) / fittedHeight;
+
+      return [imageX, imageY];
     }
 
     default:
