@@ -1719,16 +1719,6 @@ export default function CreatePage() {
                   )}
 
 
-                  {!sideEdgeImage && topEdgeColor === "none" && bottomEdgeColor === "none" && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-4">
-                      <div className="flex items-start gap-2">
-                        <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                        <p className="text-xs text-amber-700">
-                          Upload a side edge image or choose colors for top/bottom edges to enable preview
-                        </p>
-                      </div>
-                    </div>
-                  )}
               </CardContent>
             </Card>
 
@@ -2296,19 +2286,8 @@ export default function CreatePage() {
                     {/* 3D Mockup View - Main Prominent Display */}
                     <div className="flex-1 bg-gradient-to-b from-gray-50 to-gray-100 p-6 rounded-lg">
                       <div className="flex flex-col items-center space-y-6">
-                        <div className="flex items-center justify-between w-full max-w-4xl mb-4">
+                        <div className="w-full max-w-4xl mb-4">
                           <h3 className="text-lg font-medium text-gray-800">3D Book Mockup</h3>
-                          {mockupUrl && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleDownloadMockup}
-                              className="flex items-center gap-2"
-                            >
-                              <Download className="h-4 w-4" />
-                              Download Mockup
-                            </Button>
-                          )}
                         </div>
 
                         {/* Cover Image Upload */}
@@ -2358,16 +2337,26 @@ export default function CreatePage() {
                                 className="max-w-full h-auto rounded-lg shadow-2xl"
                                 style={{ maxHeight: '600px' }}
                               />
-                              <Button
-                                onClick={generateMockup}
-                                variant="outline"
-                                size="sm"
-                                className="mt-4"
-                                disabled={isGeneratingMockup || !sideEdgeImage}
-                              >
-                                <Loader2 className={`h-3 w-3 mr-2 ${isGeneratingMockup ? 'animate-spin' : ''}`} />
-                                Regenerate Mockup
-                              </Button>
+                              <div className="flex gap-2 mt-4">
+                                <Button
+                                  onClick={generateMockup}
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={isGeneratingMockup || !sideEdgeImage}
+                                >
+                                  <Loader2 className={`h-3 w-3 mr-2 ${isGeneratingMockup ? 'animate-spin' : ''}`} />
+                                  Regenerate Mockup
+                                </Button>
+                                <Button
+                                  onClick={handleDownloadMockup}
+                                  variant="default"
+                                  size="sm"
+                                  className="flex items-center gap-2"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  Download Mockup
+                                </Button>
+                              </div>
                             </div>
                           ) : (
                             <div className="bg-white rounded-lg p-12 flex items-center justify-center min-h-[400px] w-full border-2 border-dashed border-gray-300">
