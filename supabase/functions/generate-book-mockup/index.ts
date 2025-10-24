@@ -16,6 +16,7 @@ interface MockupRequest {
   trimWidth?: number; // Book trim width in inches (e.g., 6)
   trimHeight?: number; // Book trim height in inches (e.g., 9)
   pageCount?: number; // Total number of pages (e.g., 200)
+  scaleMode?: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides'; // Edge image scaling mode
   outputPath?: string; // Optional output path for storage
 }
 
@@ -90,6 +91,79 @@ function quadToUV(
   }
 
   return [u, v];
+}
+
+// Helper: Apply scaling mode to UV coordinates for edge design mapping
+function applyScaleMode(
+  u: number,
+  v: number,
+  scaleMode: 'stretch' | 'fit' | 'fill' | 'none' | 'extend-sides',
+  imageWidth: number,
+  imageHeight: number,
+  targetWidth: number,
+  targetHeight: number
+): [number, number] | null {
+  const imageAspect = imageWidth / imageHeight;
+  const targetAspect = targetWidth / targetHeight;
+
+  switch (scaleMode) {
+    case 'stretch':
+      // Use UV as-is (stretches to fit)
+      return [u, v];
+
+    case 'fit': {
+      // Fit entire image within target (may have letterboxing)
+      if (imageAspect > targetAspect) {
+        // Image is wider - letterbox top/bottom
+        const scale = imageAspect / targetAspect;
+        const newV = (v - 0.5) * scale + 0.5;
+        if (newV < 0 || newV > 1) return null; // Outside image bounds
+        return [u, newV];
+      } else {
+        // Image is taller - letterbox left/right
+        const scale = targetAspect / imageAspect;
+        const newU = (u - 0.5) * scale + 0.5;
+        if (newU < 0 || newU > 1) return null; // Outside image bounds
+        return [newU, v];
+      }
+    }
+
+    case 'fill': {
+      // Fill target (may crop image)
+      if (imageAspect > targetAspect) {
+        // Image is wider - crop left/right
+        const scale = targetAspect / imageAspect;
+        const newU = (u - 0.5) * scale + 0.5;
+        return [newU, v];
+      } else {
+        // Image is taller - crop top/bottom
+        const scale = imageAspect / targetAspect;
+        const newV = (v - 0.5) * scale + 0.5;
+        return [u, newV];
+      }
+    }
+
+    case 'none':
+      // Use image at original scale (1:1 pixel mapping)
+      return [u, v];
+
+    case 'extend-sides': {
+      // Extend leftmost and rightmost columns
+      const EDGE_THRESHOLD = 0.05; // 5% from each edge
+      if (u < EDGE_THRESHOLD) {
+        return [0, v]; // Sample from leftmost column
+      } else if (u > 1 - EDGE_THRESHOLD) {
+        return [1, v]; // Sample from rightmost column
+      } else {
+        // Scale the middle portion to fill the center
+        const scaledU = (u - EDGE_THRESHOLD) / (1 - 2 * EDGE_THRESHOLD);
+        return [scaledU, v];
+      }
+    }
+
+    default:
+      return [u, v];
+  }
 }
 
 // Helper: Bilinear interpolation for smooth sampling
@@ -338,10 +412,11 @@ serve(async (req) => {
       trimWidth = 6,
       trimHeight = 9,
       pageCount = 200,
+      scaleMode = 'fill',
       outputPath
     } = requestData;
 
-    console.log('Generating mockup...', { trimWidth, trimHeight, pageCount });
+    console.log('Generating mockup...', { trimWidth, trimHeight, pageCount, scaleMode });
 
     // Get cover image data (optional now)
     let coverBuffer: ArrayBuffer | null = null;
@@ -635,6 +710,10 @@ serve(async (req) => {
       const pageEdgeMinY = Math.min(pageEdgeQuad.tl[1], pageEdgeQuad.tr[1], pageEdgeQuad.bl[1], pageEdgeQuad.br[1]);
       const pageEdgeMaxY = Math.max(pageEdgeQuad.tl[1], pageEdgeQuad.tr[1], pageEdgeQuad.bl[1], pageEdgeQuad.br[1]);
 
+      // Calculate target dimensions for scaling
+      const targetWidth = pageEdgeMaxX - pageEdgeMinX;
+      const targetHeight = pageEdgeMaxY - pageEdgeMinY;
+
       for (let y = Math.floor(pageEdgeMinY); y <= Math.ceil(pageEdgeMaxY); y++) {
         for (let x = Math.floor(pageEdgeMinX); x <= Math.ceil(pageEdgeMaxX); x++) {
           // Check bounds
@@ -644,7 +723,19 @@ serve(async (req) => {
           const uv = quadToUV(x, y, pageEdgeQuad);
           if (!uv) continue;
 
-          const [u, v] = uv;
+          // Apply scaling mode to UV coordinates
+          const scaledUV = applyScaleMode(
+            uv[0],
+            uv[1],
+            scaleMode,
+            edgeWidth,
+            edgeHeight,
+            targetWidth,
+            targetHeight
+          );
+          if (!scaledUV) continue; // Outside bounds after scaling
+
+          const [u, v] = scaledUV;
           const edgeSrcX = u * (edgeWidth - 1);
           const edgeSrcY = v * (edgeHeight - 1);
 

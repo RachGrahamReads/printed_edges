@@ -539,6 +539,13 @@ export default function CreatePage() {
     }
   }, [sideEdgeImage, topEdgeImage, bottomEdgeImage, topEdgeColor, bottomEdgeColor, isLoadingPreview]);
 
+  // Regenerate mockup when scaleMode or page count changes (only if mockup already exists)
+  useEffect(() => {
+    if (mockupUrl && sideEdgeImage && !isGeneratingMockup) {
+      generateMockup();
+    }
+  }, [scaleMode, manualPageCount, totalPages, useManualSettings]);
+
   // Generate template function
   const generateTemplate = () => {
     if (!pdfFile || totalPages === 0) return;
@@ -2334,7 +2341,7 @@ export default function CreatePage() {
                               <img
                                 src={mockupUrl}
                                 alt="3D Book Mockup"
-                                className="max-w-full h-auto rounded-lg shadow-2xl"
+                                className="max-w-full h-auto rounded-lg"
                                 style={{ maxHeight: '600px' }}
                               />
                               <div className="flex gap-2 mt-4">
