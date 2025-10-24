@@ -548,7 +548,16 @@ export default function CreatePage() {
 
   // Generate template function
   const generateTemplate = () => {
-    if (!pdfFile || totalPages === 0) return;
+    // Use manual settings if no PDF loaded, otherwise use PDF dimensions
+    const trimWidthToUse = useManualSettings ? manualTrimWidth : bookWidth;
+    const trimHeightToUse = useManualSettings ? manualTrimHeight : bookHeight;
+    const pageCountToUse = useManualSettings ? manualPageCount : totalPages;
+
+    // Ensure we have valid dimensions
+    if (pageCountToUse === 0 || trimWidthToUse === 0 || trimHeightToUse === 0) {
+      alert('Please set valid book dimensions and page count');
+      return;
+    }
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -556,12 +565,12 @@ export default function CreatePage() {
 
     // Calculate paper thickness and edge dimensions
     const PAPER_THICKNESS_INCHES = 0.0035; // Standard paper thickness
-    const numLeaves = Math.ceil(totalPages / 2);
-    const totalThickness = numLeaves * PAPER_THICKNESS_INCHES;
+    const numLeavesForTemplate = Math.ceil(pageCountToUse / 2);
+    const totalThickness = numLeavesForTemplate * PAPER_THICKNESS_INCHES;
 
     // Calculate template dimensions to match actual processing dimensions
-    const templateWidth = numLeaves; // Width in pixels = number of leaves (1px per leaf)
-    const templateHeight = Math.round((bleedType === "add_bleed" ? bookHeight + 0.25 : bookHeight) * 285.7); // Height in pixels at 285.7 DPI
+    const templateWidth = numLeavesForTemplate; // Width in pixels = number of leaves (1px per leaf)
+    const templateHeight = Math.round((bleedType === "add_bleed" ? trimHeightToUse + 0.25 : trimHeightToUse) * 285.7); // Height in pixels at 285.7 DPI
 
     canvas.width = templateWidth;
     canvas.height = templateHeight;
@@ -616,7 +625,7 @@ export default function CreatePage() {
     ctx.textAlign = 'center';
 
     // Combine all template info into one line to prevent cropping
-    const templateText = `Side Edge Template for ${bookWidth}" × ${bookHeight}" trim; ${Math.round(templateWidth)} × ${Math.round(templateHeight)}px - Bleed (red) - Buffer (blue)`;
+    const templateText = `Side Edge Template for ${trimWidthToUse}" × ${trimHeightToUse}" trim; ${Math.round(templateWidth)} × ${Math.round(templateHeight)}px - Bleed (red) - Buffer (blue)`;
 
     ctx.fillText(templateText, 0, -lineSpacing);
 
@@ -624,7 +633,7 @@ export default function CreatePage() {
 
     // Download the template
     const link = document.createElement('a');
-    link.download = `side-edge-template-${bookWidth}x${bookHeight}-${totalPages}pages.png`;
+    link.download = `side-edge-template-${trimWidthToUse}x${trimHeightToUse}-${pageCountToUse}pages.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
   };
@@ -1464,7 +1473,7 @@ export default function CreatePage() {
                             className="w-4 h-4 text-blue-600"
                           />
                           <Label htmlFor="has-bleed" className="text-sm cursor-pointer">
-                            My PDF already has 0.125" bleed
+                            My PDF already has bleed
                           </Label>
                         </div>
                       </div>
