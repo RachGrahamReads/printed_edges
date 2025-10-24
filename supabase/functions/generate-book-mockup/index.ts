@@ -784,10 +784,17 @@ serve(async (req) => {
           const color = bilinearSample(coverPixels, coverWidth, coverHeight, srcX, srcY);
 
           const destIdx = (y * templateWidth + x) * 4;
-          outputPixels[destIdx] = color[0];
-          outputPixels[destIdx + 1] = color[1];
-          outputPixels[destIdx + 2] = color[2];
-          outputPixels[destIdx + 3] = color[3];
+
+          // Alpha blend cover on top of edge - respect cover transparency
+          const coverAlpha = color[3] / 255;
+          const existingR = outputPixels[destIdx];
+          const existingG = outputPixels[destIdx + 1];
+          const existingB = outputPixels[destIdx + 2];
+
+          outputPixels[destIdx] = Math.round(color[0] * coverAlpha + existingR * (1 - coverAlpha));
+          outputPixels[destIdx + 1] = Math.round(color[1] * coverAlpha + existingG * (1 - coverAlpha));
+          outputPixels[destIdx + 2] = Math.round(color[2] * coverAlpha + existingB * (1 - coverAlpha));
+          outputPixels[destIdx + 3] = 255; // Output is always opaque
         }
       }
 
