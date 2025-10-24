@@ -2294,7 +2294,10 @@ export default function CreatePage() {
                     <div className="flex-1 bg-gradient-to-b from-gray-50 to-gray-100 p-6 rounded-lg">
                       <div className="flex flex-col items-center space-y-6">
                         <div className="w-full max-w-4xl mb-4">
-                          <h3 className="text-lg font-medium text-gray-800">3D Book Mockup</h3>
+                          <h3 className="text-lg font-medium text-gray-800">
+                            3D Book Mockup
+                            <span className="ml-2 text-xs font-normal text-gray-500 italic">(indicative only, not to scale)</span>
+                          </h3>
                         </div>
 
                         {/* Cover Image Upload */}

@@ -729,17 +729,26 @@ serve(async (req) => {
       const pageEdgeMinY = Math.min(pageEdgeQuad.tl[1], pageEdgeQuad.tr[1], pageEdgeQuad.bl[1], pageEdgeQuad.br[1]);
       const pageEdgeMaxY = Math.max(pageEdgeQuad.tl[1], pageEdgeQuad.tr[1], pageEdgeQuad.bl[1], pageEdgeQuad.br[1]);
 
-      // Calculate target dimensions for scaling based on PHYSICAL dimensions
-      // NOT pixel dimensions of the distorted 3D quad, which would give wrong aspect ratio
+      // Calculate target dimensions for scaling
+      // For 'none' mode: use recommended pixel dimensions (matches edge preview)
+      // For other modes: use physical dimensions for correct aspect ratio
       const PAPER_THICKNESS_INCHES = 0.0035;
       const numLeaves = Math.ceil(pageCount / 2);
-      const physicalEdgeWidth = numLeaves * PAPER_THICKNESS_INCHES; // e.g., 0.35"
-      const physicalEdgeHeight = trimHeight; // e.g., 9"
 
-      // Use physical dimensions for aspect ratio calculations in applyScaleMode
-      // The actual pixel values don't matter, only their ratio matters for scaling decisions
-      const targetWidth = physicalEdgeWidth * 1000; // Scale up for precision
-      const targetHeight = physicalEdgeHeight * 1000;
+      let targetWidth, targetHeight;
+
+      if (scaleMode === 'none') {
+        // Use recommended pixel dimensions for 'none' mode (same as edge preview canvas)
+        // This ensures 1:1 pixel mapping matches the edge preview
+        targetWidth = numLeaves; // Width in pixels = number of leaves
+        targetHeight = trimHeight * 285.7; // Height at 285.7 DPI
+      } else {
+        // Use physical dimensions for aspect ratio calculations (fill, fit, stretch, extend-sides)
+        const physicalEdgeWidth = numLeaves * PAPER_THICKNESS_INCHES; // e.g., 0.35"
+        const physicalEdgeHeight = trimHeight; // e.g., 9"
+        targetWidth = physicalEdgeWidth * 1000; // Scale up for precision
+        targetHeight = physicalEdgeHeight * 1000;
+      }
 
       for (let y = Math.floor(pageEdgeMinY); y <= Math.ceil(pageEdgeMaxY); y++) {
         for (let x = Math.floor(pageEdgeMinX); x <= Math.ceil(pageEdgeMaxX); x++) {
