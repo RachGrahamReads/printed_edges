@@ -693,20 +693,25 @@ serve(async (req) => {
 
           const edgeColor = bilinearSample(edgePixels, edgeWidth, edgeHeight, edgeSrcX, edgeSrcY);
 
-          // Apply edge design at 60% opacity with clean light background
-          const opacity = 0.6;
+          // Respect edge image's own alpha channel combined with 60% opacity
+          const edgeImageAlpha = edgeColor[3] / 255; // Edge's own transparency
+          const combinedOpacity = edgeImageAlpha * 0.6; // Combine with 60% opacity
+
           const destIdx = (y * templateWidth + x) * 4;
 
-          // Get existing background color (now clean light paper color)
-          const bgR = outputPixels[destIdx];
-          const bgG = outputPixels[destIdx + 1];
-          const bgB = outputPixels[destIdx + 2];
+          // Only blend if edge has some opacity (skip fully transparent pixels)
+          if (combinedOpacity > 0.001) {
+            // Get existing background color (clean light paper color)
+            const bgR = outputPixels[destIdx];
+            const bgG = outputPixels[destIdx + 1];
+            const bgB = outputPixels[destIdx + 2];
 
-          // Blend edge color with light background - no pre-lightening needed
-          outputPixels[destIdx] = Math.round(edgeColor[0] * opacity + bgR * (1 - opacity));
-          outputPixels[destIdx + 1] = Math.round(edgeColor[1] * opacity + bgG * (1 - opacity));
-          outputPixels[destIdx + 2] = Math.round(edgeColor[2] * opacity + bgB * (1 - opacity));
-          outputPixels[destIdx + 3] = 255;
+            // Blend edge color with background based on combined opacity
+            outputPixels[destIdx] = Math.round(edgeColor[0] * combinedOpacity + bgR * (1 - combinedOpacity));
+            outputPixels[destIdx + 1] = Math.round(edgeColor[1] * combinedOpacity + bgG * (1 - combinedOpacity));
+            outputPixels[destIdx + 2] = Math.round(edgeColor[2] * combinedOpacity + bgB * (1 - combinedOpacity));
+            outputPixels[destIdx + 3] = 255;
+          }
         }
       }
 
