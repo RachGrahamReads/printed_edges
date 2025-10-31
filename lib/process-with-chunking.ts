@@ -352,7 +352,7 @@ export async function processPDFWithChunking(
       onProgress(80);
     }
 
-    console.log(`Starting recursive merge of ${processedPaths.length} chunks into final PDF...`);
+    console.log(`Starting recursive merge of ${processedChunkPaths.length} chunks into final PDF...`);
 
     // Use progressive merge for large PDFs (>50 chunks)
     const outputPath = `${sessionId}/final.pdf`;
