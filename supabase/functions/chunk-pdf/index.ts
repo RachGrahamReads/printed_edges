@@ -74,17 +74,27 @@ serve(async (req) => {
           .download(requestData.pdfPath);
 
         if (downloadError) {
-          throw new Error(downloadError.message);
+          console.error('Download error from storage:', JSON.stringify(downloadError));
+          throw new Error(downloadError.message || JSON.stringify(downloadError));
         }
 
         pdfData = data;
       } catch (downloadError) {
         retryCount++;
+        // Get error message, handling various error formats
+        const errorMsg = downloadError instanceof Error
+          ? downloadError.message
+          : typeof downloadError === 'object' && downloadError !== null
+            ? JSON.stringify(downloadError)
+            : String(downloadError);
+
+        console.error(`Download attempt ${retryCount}/${maxRetries} failed:`, errorMsg);
+
         if (retryCount >= maxRetries) {
-          throw new Error(`Failed to download PDF after ${maxRetries} attempts: ${downloadError.message}`);
+          throw new Error(`Failed to download PDF after ${maxRetries} attempts: ${errorMsg}`);
         }
         const backoffTime = 1000 * Math.pow(2, retryCount - 1);
-        console.warn(`Download attempt ${retryCount}/${maxRetries} failed, retrying in ${backoffTime}ms...`);
+        console.warn(`Retrying in ${backoffTime}ms...`);
         await new Promise(resolve => setTimeout(resolve, backoffTime));
       }
     }
