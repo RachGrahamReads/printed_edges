@@ -34,10 +34,6 @@ export async function processPDFWithChunking(
     throw new Error('System error. Please try again or contact us for support.');
   }
 
-  // Get Supabase URL and key for Edge Function calls
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
-
   // Define sessionId at function scope for cleanup access
   let sessionId = '';
   let useDesignPaths = false;
@@ -216,8 +212,6 @@ export async function processPDFWithChunking(
     console.log(`Using progressive chunking strategy for ${options.numPages} pages...`);
 
     const chunks = await progressiveChunking(
-      supabaseUrl,
-      supabaseAnonKey,
       sessionId,
       pdfPath,
       options.numPages
@@ -252,18 +246,8 @@ export async function processPDFWithChunking(
           try {
             console.log(`Attempting to process chunk ${chunkIndex} (page ${chunk.startPage + 1}), attempt ${retryCount + 1}/${maxRetries}`);
 
-            // Create an AbortController for timeout
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
-
-            const processResponse = await fetch(`${supabaseUrl}/functions/v1/process-pdf-chunk`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${supabaseAnonKey}`,
-                'apikey': supabaseAnonKey
-              },
-              body: JSON.stringify({
+            const { data, error: processError } = await supabase!.functions.invoke('process-pdf-chunk', {
+              body: {
                 sessionId,
                 chunkPath: chunk.chunkPath,
                 chunkIndex: chunk.chunkIndex,
@@ -273,22 +257,18 @@ export async function processPDFWithChunking(
                 sliceStoragePaths: maskedSlicesPaths,
                 bleedType: options.bleedType,
                 edgeType: options.edgeType
-              }),
-              signal: controller.signal
+              }
             });
 
-            clearTimeout(timeoutId);
-
-            if (!processResponse.ok) {
-              const errorText = await processResponse.text();
-              const errorMessage = `${processResponse.status} - ${errorText}`;
-              const isRetryable = processResponse.status === 500 || // Server errors are retryable
-                                processResponse.status === 502 || // Bad gateway
-                                processResponse.status === 503 || // Service unavailable
-                                processResponse.status === 504 || // Gateway timeout
+            if (processError) {
+              const errorMessage = processError.message || JSON.stringify(processError);
+              const isRetryable = errorMessage.includes('500') ||
+                                errorMessage.includes('502') ||
+                                errorMessage.includes('503') ||
+                                errorMessage.includes('504') ||
                                 errorMessage.includes('WORKER_LIMIT') ||
                                 errorMessage.includes('timeout') ||
-                                errorMessage.includes('connection') || // "Network connection lost"
+                                errorMessage.includes('connection') ||
                                 errorMessage.includes('Failed to send a request') ||
                                 errorMessage.includes('Failed to fetch') ||
                                 errorMessage.includes('NetworkError') ||
@@ -304,8 +284,6 @@ export async function processPDFWithChunking(
                 throw new Error(errorMessage);
               }
             }
-
-            const data = await processResponse.json();
             // Store result in correct order
             processedChunkPaths[chunkIndex] = data.processedChunkPath;
 
@@ -391,34 +369,20 @@ export async function processPDFWithChunking(
     } else {
       console.log(`Small PDF (${chunks.length} chunks). Using single-stage merge.`);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for merge
-
-      const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-pdf-chunks`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-          'apikey': supabaseAnonKey
-        },
-        body: JSON.stringify({
+      const { data: mergeData, error: mergeError } = await supabase!.functions.invoke('merge-pdf-chunks', {
+        body: {
           sessionId,
           processedChunkPaths,
           totalChunks: chunks.length,
           outputPath
-        }),
-        signal: controller.signal
+        }
       });
 
-      clearTimeout(timeoutId);
-
-      if (!mergeResponse.ok) {
-        const errorText = await mergeResponse.text();
-        console.error(`Failed to merge PDF chunks: ${mergeResponse.status} -`, errorText);
+      if (mergeError) {
+        console.error(`Failed to merge PDF chunks:`, mergeError);
         throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
       }
 
-      const mergeData = await mergeResponse.json();
       finalPdfPath = outputPath;
     }
 
@@ -677,9 +641,6 @@ async function progressiveMerge(sessionId: string, chunkPaths: string[], finalOu
     throw new Error('System error. Please try again or contact us for support.');
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
-
   console.log(`Starting progressive merge for ${chunkPaths.length} chunks`);
 
   // Try to resume from checkpoint
@@ -932,9 +893,6 @@ async function mergeGroup(
   totalGroups: number,
   forceSlowMerge: boolean = false // Flag to indicate PDF has complex images/fonts
 ): Promise<string> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
-
   console.log(`Merging group ${groupNum}/${totalGroups} (${chunkPaths.length} files) → ${outputPath}`);
   if (forceSlowMerge) {
     console.log(`⚠️ COMPLEX PDF MODE: Using slow merge strategy (1-at-a-time) to handle large images/fonts`);
@@ -944,41 +902,28 @@ async function mergeGroup(
   const maxRetries = 2;
 
   while (retryCount <= maxRetries) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout per group
-
     try {
-      const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-pdf-chunks`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-          'apikey': supabaseAnonKey
-        },
-        body: JSON.stringify({
+      const { data: mergeData, error: mergeError } = await supabase!.functions.invoke('merge-pdf-chunks', {
+        body: {
           sessionId,
           processedChunkPaths: chunkPaths,
           totalChunks: chunkPaths.length,
           outputPath,
           forceSlowMerge // Pass flag to Edge Function
-        }),
-        signal: controller.signal
+        }
       });
 
-      clearTimeout(timeoutId);
-
-      if (!mergeResponse.ok) {
-        const errorText = await mergeResponse.text();
-        const errorMessage = `${mergeResponse.status} - ${errorText}`;
+      if (mergeError) {
+        const errorMessage = mergeError.message || JSON.stringify(mergeError);
 
         // Check if it's a memory or resource error
-        const isMemoryError = errorText.includes('Array buffer allocation failed') ||
-                            errorText.includes('out of memory') ||
-                            errorText.includes('OOM');
+        const isMemoryError = errorMessage.includes('Array buffer allocation failed') ||
+                            errorMessage.includes('out of memory') ||
+                            errorMessage.includes('OOM');
 
-        const isWorkerLimit = errorText.includes('WORKER_LIMIT') ||
-                             errorText.includes('not having enough compute resources') ||
-                             errorText.includes('CPU time limit exceeded');
+        const isWorkerLimit = errorMessage.includes('WORKER_LIMIT') ||
+                             errorMessage.includes('not having enough compute resources') ||
+                             errorMessage.includes('CPU time limit exceeded');
 
         // For WORKER_LIMIT or memory errors with multiple files, split the merge
         // Even 2 files can be too large, so we allow splitting down to 1 file per merge
@@ -1022,12 +967,10 @@ async function mergeGroup(
         throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
       }
 
-      await mergeResponse.json(); // Consume the response
       console.log(`✓ Group ${groupNum}/${totalGroups} merged successfully`);
       return outputPath;
 
     } catch (error) {
-      clearTimeout(timeoutId);
 
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isMemoryError = errorMessage.includes('Array buffer allocation failed') ||
@@ -1054,8 +997,6 @@ async function mergeGroup(
 
 // Progressive chunking with adaptive sizing and retry logic
 async function progressiveChunking(
-  supabaseUrl: string,
-  supabaseAnonKey: string,
   sessionId: string,
   pdfPath: string,
   totalPages: number
@@ -1086,31 +1027,20 @@ async function progressiveChunking(
 
     while (!success && retryCount < maxRetries) {
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout
+        console.log(`Attempting to chunk batch ${batchNumber} (attempt ${retryCount + 1}/${maxRetries})`);
 
-        const chunkResponse = await fetch(`${supabaseUrl}/functions/v1/chunk-pdf`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseAnonKey}`,
-            'apikey': supabaseAnonKey
-          },
-          body: JSON.stringify({
+        const { data: chunkData, error: chunkError } = await supabase!.functions.invoke('chunk-pdf', {
+          body: {
             sessionId,
             pdfPath,
             startPage: batch.startPage,
             endPage: batch.endPage,
             totalPages
-          }),
-          signal: controller.signal
+          }
         });
 
-        clearTimeout(timeoutId);
-
-        if (!chunkResponse.ok) {
-          const errorText = await chunkResponse.text();
-          const errorMessage = `${chunkResponse.status} - ${errorText}`;
+        if (chunkError) {
+          const errorMessage = `${chunkError.message || JSON.stringify(chunkError)}`;
 
           // Check if it's a timeout or resource error
           const isTimeoutError = errorMessage.includes('timeout') ||
@@ -1131,7 +1061,6 @@ async function progressiveChunking(
           throw new Error('Error processing file. Please flatten your PDF and reduce file size. If problems persist, please contact us for support.');
         }
 
-        const chunkData = await chunkResponse.json();
         if (!chunkData || !chunkData.chunks) {
           console.error('No chunks returned from chunk-pdf Edge Function');
           throw new Error('Processing error. Please try again or contact us for support.');
